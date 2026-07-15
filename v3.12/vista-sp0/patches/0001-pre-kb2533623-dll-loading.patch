@@ -1,0 +1,156 @@
+diff --git a/v3.12/Python-3.12.10/Modules/posixmodule.c b/v3.12/Python-3.12.10/Modules/posixmodule.c
+index 97914ad..afb6b74 100644
+--- a/v3.12/Python-3.12.10/Modules/posixmodule.c
++++ b/v3.12/Python-3.12.10/Modules/posixmodule.c
+@@ -15815,15 +15815,30 @@ static PyObject *
+ os__add_dll_directory_impl(PyObject *module, path_t *path)
+ /*[clinic end generated code: output=80b025daebb5d683 input=1de3e6c13a5808c8]*/
+ {
++    typedef DLL_DIRECTORY_COOKIE (WINAPI *AddDllDirectoryFunc)(PCWSTR);
+     DLL_DIRECTORY_COOKIE cookie = 0;
+     DWORD err = 0;
++    HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
++    AddDllDirectoryFunc add_dll_directory = NULL;
+ 
+     if (PySys_Audit("os.add_dll_directory", "(O)", path->object) < 0) {
+         return NULL;
+     }
+ 
++    if (kernel32 != NULL) {
++        add_dll_directory = (AddDllDirectoryFunc)GetProcAddress(
++            kernel32, "AddDllDirectory");
++    }
++    if (add_dll_directory == NULL) {
++        PyErr_SetString(
++            PyExc_NotImplementedError,
++            "os.add_dll_directory requires KB2533623 on this version "
++            "of Windows");
++        return NULL;
++    }
++
+     Py_BEGIN_ALLOW_THREADS
+-    if (!(cookie = AddDllDirectory(path->wide))) {
++    if (!(cookie = add_dll_directory(path->wide))) {
+         err = GetLastError();
+     }
+     Py_END_ALLOW_THREADS
+@@ -15852,8 +15867,11 @@ static PyObject *
+ os__remove_dll_directory_impl(PyObject *module, PyObject *cookie)
+ /*[clinic end generated code: output=594350433ae535bc input=c1d16a7e7d9dc5dc]*/
+ {
++    typedef BOOL (WINAPI *RemoveDllDirectoryFunc)(DLL_DIRECTORY_COOKIE);
+     DLL_DIRECTORY_COOKIE cookieValue;
+     DWORD err = 0;
++    HMODULE kernel32;
++    RemoveDllDirectoryFunc remove_dll_directory;
+ 
+     if (!PyCapsule_IsValid(cookie, "DLL directory cookie")) {
+         PyErr_SetString(PyExc_TypeError,
+@@ -15864,8 +15882,22 @@ os__remove_dll_directory_impl(PyObject *module, PyObject *cookie)
+     cookieValue = (DLL_DIRECTORY_COOKIE)PyCapsule_GetPointer(
+         cookie, "DLL directory cookie");
+ 
++    kernel32 = GetModuleHandleW(L"kernel32.dll");
++    remove_dll_directory = NULL;
++    if (kernel32 != NULL) {
++        remove_dll_directory = (RemoveDllDirectoryFunc)GetProcAddress(
++            kernel32, "RemoveDllDirectory");
++    }
++    if (remove_dll_directory == NULL) {
++        PyErr_SetString(
++            PyExc_NotImplementedError,
++            "os.remove_dll_directory requires KB2533623 on this version "
++            "of Windows");
++        return NULL;
++    }
++
+     Py_BEGIN_ALLOW_THREADS
+-    if (!RemoveDllDirectory(cookieValue)) {
++    if (!remove_dll_directory(cookieValue)) {
+         err = GetLastError();
+     }
+     Py_END_ALLOW_THREADS
+diff --git a/v3.12/Python-3.12.10/Python/dynload_win.c b/v3.12/Python-3.12.10/Python/dynload_win.c
+index acab05e..5c18ece 100644
+--- a/v3.12/Python-3.12.10/Python/dynload_win.c
++++ b/v3.12/Python-3.12.10/Python/dynload_win.c
+@@ -14,6 +14,28 @@
+ #include "patchlevel.h"
+ #include <windows.h>
+ 
++/*
++ * LOAD_LIBRARY_SEARCH_* flags were added to Vista and Windows 7 by
++ * KB2533623.  On an unpatched system LoadLibraryExW() rejects those flags
++ * with ERROR_INVALID_PARAMETER.  The module path passed by the import
++ * machinery is absolute, so LOAD_WITH_ALTERED_SEARCH_PATH is the closest
++ * pre-KB equivalent: it searches the extension module's directory before
++ * the normal DLL search locations.
++ *
++ * Only retry ERROR_INVALID_PARAMETER.  Other failures (for example a
++ * missing dependency) must be reported unchanged and must not trigger a
++ * less restrictive second search on modern Windows.
++ */
++static HMODULE
++load_library_ex_compat(const wchar_t *path, DWORD flags, DWORD legacy_flags)
++{
++    HMODULE handle = LoadLibraryExW(path, NULL, flags);
++    if (handle == NULL && GetLastError() == ERROR_INVALID_PARAMETER) {
++        handle = LoadLibraryExW(path, NULL, legacy_flags);
++    }
++    return handle;
++}
++
+ #ifdef _DEBUG
+ #define PYD_DEBUG_SUFFIX "_d"
+ #else
+@@ -189,7 +211,10 @@ _Py_CheckPython3(void)
+         wchar_t *p = wcsrchr(py3path, L'\\');
+         if (p) {
+             wcscpy(p + 1, PY3_DLLNAME);
+-            hPython3 = LoadLibraryExW(py3path, NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
++            hPython3 = load_library_ex_compat(
++                py3path,
++                LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
++                LOAD_WITH_ALTERED_SEARCH_PATH);
+             if (hPython3 != NULL) {
+                 return 1;
+             }
+@@ -198,7 +223,10 @@ _Py_CheckPython3(void)
+ 
+     /* If we can locate python3.dll in our application dir,
+        use that DLL */
+-    hPython3 = LoadLibraryExW(PY3_DLLNAME, NULL, LOAD_LIBRARY_SEARCH_APPLICATION_DIR);
++    hPython3 = load_library_ex_compat(
++        PY3_DLLNAME,
++        LOAD_LIBRARY_SEARCH_APPLICATION_DIR,
++        0);
+     if (hPython3 != NULL) {
+         return 1;
+     }
+@@ -211,7 +239,10 @@ _Py_CheckPython3(void)
+     if (config->prefix) {
+         wcscpy_s(py3path, MAXPATHLEN, config->prefix);
+         if (py3path[0] && _Py_add_relfile(py3path, L"DLLs\\" PY3_DLLNAME, MAXPATHLEN) >= 0) {
+-            hPython3 = LoadLibraryExW(py3path, NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
++            hPython3 = load_library_ex_compat(
++                py3path,
++                LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
++                LOAD_WITH_ALTERED_SEARCH_PATH);
+         }
+     }
+     return hPython3 != NULL;
+@@ -250,9 +281,11 @@ dl_funcptr _PyImport_FindSharedFuncptrWindows(const char *prefix,
+            AddDllDirectory function. We add SEARCH_DLL_LOAD_DIR to
+            ensure DLLs adjacent to the PYD are preferred. */
+         Py_BEGIN_ALLOW_THREADS
+-        hDLL = LoadLibraryExW(wpathname, NULL,
+-                              LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
+-                              LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
++        hDLL = load_library_ex_compat(
++            wpathname,
++            LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
++                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
++            LOAD_WITH_ALTERED_SEARCH_PATH);
+         Py_END_ALLOW_THREADS
+         PyMem_Free(wpathname);
+ 
