@@ -43,11 +43,10 @@ function Get-Vc140RuntimeFromRedist {
         throw "The VC140 redistributable does not have a valid Microsoft signature."
     }
 
-    $layoutProcess = Start-Process -FilePath $redistExe -ArgumentList @(
-        "/layout", "`"$redistLayout`"", "/quiet"
-    ) -Wait -PassThru
-    if ($layoutProcess.ExitCode -notin @(0, 3010)) {
-        throw "Extracting the VC140 redistributable layout failed with exit code $($layoutProcess.ExitCode)."
+    $dark = (Get-Command "dark.exe" -ErrorAction Stop).Source
+    & $dark -nologo -x $redistLayout $redistExe
+    if ($LASTEXITCODE -ne 0) {
+        throw "Extracting the VC140 redistributable bundle failed with exit code $LASTEXITCODE."
     }
 
     $minimumMsi = Get-ChildItem $redistLayout -Filter "vc_runtimeMinimum_$Architecture.msi" `
