@@ -19,6 +19,55 @@ $packageDirectory = Join-Path $OutputDirectory "python-3.12.10-vista-sp0-$sdkArc
 $packageZip = "$packageDirectory.zip"
 $tempDirectory = Join-Path $env:RUNNER_TEMP "python-layout-$sdkArch"
 
+function Get-Vc140RuntimeFromRedist {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Architecture
+    )
+
+    $redistRoot = Join-Path $env:RUNNER_TEMP "vc140-redist-$Architecture"
+    $redistExe = Join-Path $redistRoot "vc_redist.$Architecture.exe"
+    $redistLayout = Join-Path $redistRoot "layout"
+    $redistExtract = Join-Path $redistRoot "extract"
+    $redistUrl = "https://download.microsoft.com/download/6/A/A/6AA4EDFF-645B-48C5-81CC-ED5963AEAD48/vc_redist.$Architecture.exe"
+
+    if (Test-Path $redistRoot) {
+        Remove-Item -Recurse -Force $redistRoot
+    }
+    New-Item -ItemType Directory -Force -Path $redistRoot | Out-Null
+
+    Write-Host "Downloading the Microsoft Visual C++ 2015 Update 3 $Architecture redistributable."
+    Invoke-WebRequest -Uri $redistUrl -OutFile $redistExe
+    $signature = Get-AuthenticodeSignature $redistExe
+    if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "Microsoft") {
+        throw "The VC140 redistributable does not have a valid Microsoft signature."
+    }
+
+    $layoutProcess = Start-Process -FilePath $redistExe -ArgumentList @(
+        "/layout", "`"$redistLayout`"", "/quiet"
+    ) -Wait -PassThru
+    if ($layoutProcess.ExitCode -notin @(0, 3010)) {
+        throw "Extracting the VC140 redistributable layout failed with exit code $($layoutProcess.ExitCode)."
+    }
+
+    $minimumMsi = Get-ChildItem $redistLayout -Filter "vc_runtimeMinimum_$Architecture.msi" `
+        -File -Recurse | Select-Object -First 1
+    if (!$minimumMsi) {
+        throw "The VC140 $Architecture minimum-runtime MSI was not found in the redistributable layout."
+    }
+
+    New-Item -ItemType Directory -Force -Path $redistExtract | Out-Null
+    $msiProcess = Start-Process -FilePath "msiexec.exe" -ArgumentList @(
+        "/a", "`"$($minimumMsi.FullName)`"", "/qn", "TARGETDIR=`"$redistExtract`""
+    ) -Wait -PassThru
+    if ($msiProcess.ExitCode -notin @(0, 3010)) {
+        throw "Extracting the VC140 minimum-runtime MSI failed with exit code $($msiProcess.ExitCode)."
+    }
+
+    return Get-ChildItem $redistExtract -Filter "vcruntime140.dll" -File -Recurse |
+        Select-Object -First 1
+}
+
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 if (Test-Path $packageDirectory) {
     Remove-Item -Recurse -Force $packageDirectory
@@ -66,7 +115,10 @@ $vc140Runtime = Get-ChildItem $visualStudioRoot -Filter "vcruntime140.dll" -File
     Select-Object -First 1
 
 if (!$vc140Runtime) {
-    throw "Could not locate the $sdkArch Microsoft.VC140.CRT runtime."
+    $vc140Runtime = Get-Vc140RuntimeFromRedist -Architecture $sdkArch
+}
+if (!$vc140Runtime) {
+    throw "Could not locate or extract the $sdkArch Microsoft.VC140.CRT runtime."
 }
 $vc140Version = [Version]$vc140Runtime.VersionInfo.FileVersion
 if ($vc140Version.Major -ne 14 -or $vc140Version.Minor -ne 0) {
