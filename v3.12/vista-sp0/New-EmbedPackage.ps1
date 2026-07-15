@@ -119,7 +119,11 @@ if (!$vc140Runtime) {
 if (!$vc140Runtime) {
     throw "Could not locate or extract the $sdkArch Microsoft.VC140.CRT runtime."
 }
-$vc140Version = [Version]$vc140Runtime.VersionInfo.FileVersion
+$vc140VersionMatch = [regex]::Match($vc140Runtime.VersionInfo.FileVersion, "^\d+\.\d+\.\d+\.\d+")
+if (!$vc140VersionMatch.Success) {
+    throw "Could not parse the VC140 runtime version at $($vc140Runtime.FullName)."
+}
+$vc140Version = [Version]$vc140VersionMatch.Value
 if ($vc140Version.Major -ne 14 -or $vc140Version.Minor -ne 0) {
     throw "Expected a 14.0 VC140 runtime, found $vc140Version at $($vc140Runtime.FullName)."
 }
