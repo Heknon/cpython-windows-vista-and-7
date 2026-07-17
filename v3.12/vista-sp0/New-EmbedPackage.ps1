@@ -89,7 +89,8 @@ $v141RedistRoot = if ($env:V141_REDIST_ROOT) { $env:V141_REDIST_ROOT } else { $v
 $v141Runtimes = Get-ChildItem $v141RedistRoot -Filter "vcruntime140.dll" -File -Recurse |
     Where-Object {
         $_.FullName -match "Microsoft\.VC141\.CRT" -and
-        $_.FullName -match "\\$sdkArch\\"
+        $_.FullName -match "\\$sdkArch\\" -and
+        $_.FullName -notmatch "\\onecore\\"
     } |
     Sort-Object FullName
 $v141Runtime = $v141Runtimes | Where-Object {
