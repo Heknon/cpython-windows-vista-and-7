@@ -439,3 +439,21 @@ index d23d6ce..a17993d 100644
 +#endif
      return PyModuleDef_Init(&winapi_module);
  }
+diff --git a/v3.12/Python-3.12.10/Modules/clinic/_winapi.c.h b/v3.12/Python-3.12.10/Modules/clinic/_winapi.c.h
+index d7ad551..6e80987 100644
+--- a/v3.12/Python-3.12.10/Modules/clinic/_winapi.c.h
++++ b/v3.12/Python-3.12.10/Modules/clinic/_winapi.c.h
+@@ -1562,1 +1562,2 @@ exit:
++#ifndef PY_VISTA_LEGACY_SDK
+ PyDoc_STRVAR(_winapi_CopyFile2__doc__,
+@@ -1631,1 +1632,2 @@ exit:
++#endif
+ /*[clinic end generated code: output=91b39b70024fa232 input=a9049054013a1b77]*/
+diff --git a/v3.12/Python-3.12.10/Modules/posixmodule.c b/v3.12/Python-3.12.10/Modules/posixmodule.c
+index 97914ad..9c64d25 100644
+--- a/v3.12/Python-3.12.10/Modules/posixmodule.c
++++ b/v3.12/Python-3.12.10/Modules/posixmodule.c
+@@ -14516,2 +14516,2 @@ os_cpu_count_impl(PyObject *module)
+-    HMODULE hKernel32 = GetModuleHandle("kernel32.dll");
++    HMODULE hKernel32 = GetModuleHandleW(L"kernel32.dll");
+     typedef DWORD (WINAPI *LPFN_GETACTIVEPROCESSORCOUNT)(WORD);

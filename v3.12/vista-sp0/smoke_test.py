@@ -9,7 +9,9 @@ import lzma
 import os
 from pathlib import Path
 import platform
+import shutil
 import socket
+import stat
 import sqlite3
 import ssl
 import subprocess
@@ -47,6 +49,36 @@ with tempfile.TemporaryDirectory() as directory:
     test_file.write_text("vista-sp0", encoding="utf-8")
     if test_file.read_text(encoding="utf-8") != "vista-sp0":
         raise AssertionError("file round trip failed")
+
+    source = Path(directory, "copy-source.bin")
+    source.write_bytes(payload)
+    source.chmod(stat.S_IREAD)
+    copied = Path(directory, "shutil-copy.bin")
+    shutil.copy(source, copied)
+    if copied.read_bytes() != payload:
+        raise AssertionError("shutil.copy content mismatch")
+    if copied.stat().st_mode & stat.S_IWRITE:
+        raise AssertionError("shutil.copy did not preserve the read-only mode")
+    source.chmod(stat.S_IREAD | stat.S_IWRITE)
+    copied.chmod(stat.S_IREAD | stat.S_IWRITE)
+
+    expected_mtime = 946684800
+    os.utime(source, (expected_mtime, expected_mtime))
+    copied_with_metadata = Path(directory, "shutil-copy2.bin")
+    shutil.copy2(source, copied_with_metadata)
+    if copied_with_metadata.read_bytes() != payload:
+        raise AssertionError("shutil.copy2 content mismatch")
+    if abs(copied_with_metadata.stat().st_mtime - expected_mtime) > 2:
+        raise AssertionError("shutil.copy2 did not preserve the modification time")
+
+    tree_source = Path(directory, "tree-source")
+    tree_source.mkdir()
+    Path(tree_source, "nested").mkdir()
+    Path(tree_source, "nested", "payload.bin").write_bytes(payload)
+    tree_copy = Path(directory, "tree-copy")
+    shutil.copytree(tree_source, tree_copy)
+    if Path(tree_copy, "nested", "payload.bin").read_bytes() != payload:
+        raise AssertionError("shutil.copytree content mismatch")
 
 with sqlite3.connect(":memory:") as connection:
     connection.execute("create table test(value text)")
