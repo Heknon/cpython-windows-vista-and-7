@@ -30,23 +30,25 @@ architecture.
   and known post-Vista imports. A DLL that is neither packaged nor in the
   Vista RTM system-DLL allowlist fails the build.
 - The packaged smoke test imports every `.pyd` in the artifact and exercises
-  files, compression, hashing, XML, SQLite, SSL initialization, `ctypes`,
-  threads, subprocesses, TCP loopback, and `asyncio`.
+  files, `shutil.copy`, `copy2`, `copytree`, compression, hashing, XML,
+  SQLite, SSL initialization, `ctypes`, threads, subprocesses, TCP loopback,
+  and `asyncio`.
 
 The system-DLL list is not an export-level Vista RTM allowlist. That final
 static check requires an export manifest captured from genuine Vista RTM
 system DLLs. Do not infer export compatibility merely because a DLL name is
 allowed.
 
-## Current hard blocker
+## Current status and remaining blocker
 
-The reviewed Windows 10.0.10240 app-local `ucrtbase.dll` imports many
-`api-ms-win-core-*` contracts. Vista RTM does not supply those files and the
-artifact currently supplies only CPython's path-contract compatibility DLL.
-The dependency-closure audit intentionally fails if that unresolved runtime
-dependency remains. Do not weaken the audit to make CI green; replace the CRT
-strategy with one whose complete dependency closure is legal to redistribute
-and present on Vista RTM.
+The hosted build, complete PE dependency/forwarder audit, packaging, and smoke
+tests pass for x86 and x64. The package pins the complete Windows SDK
+10.0.10240 app-local UCRT payload and desktop VC141 runtime by SHA-256.
+
+This is still not proof that the Windows Vista RTM loader and kernel exports
+accept every binary. Clean Vista RTM and Windows 7 RTM guest validation below
+remains the merge blocker. Do not substitute a newer host smoke test or a VM
+with service packs, updates, redistributables, or VMware Tools installed.
 
 ## Build
 
@@ -60,7 +62,7 @@ C++ tools, and the Windows 7.1A SDK. Then run:
 ```bat
 git apply v3.12\vista-sp0\patches\0001-pre-kb2533623-dll-loading.patch
 set PATCHDIR=C:\src\cpython-windows-vista-and-7\v3.12\Python-3.12.10\api-ms-win-core-path-HACK
-v3.12\Python-3.12.10\PCbuild\build.bat -p x64 -c Release "/p:PlatformToolset=v141_xp" "/p:WindowsTargetPlatformVersion=7.0"
+v3.12\Python-3.12.10\PCbuild\build.bat -p x64 -c Release "/p:PlatformToolset=v141_xp" "/p:VCToolsVersion=14.16.27023" "/p:WindowsTargetPlatformVersion=7.0"
 ```
 
 Package and audit it from PowerShell:
