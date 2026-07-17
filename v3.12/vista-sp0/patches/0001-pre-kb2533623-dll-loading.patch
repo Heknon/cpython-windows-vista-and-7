@@ -312,7 +312,8 @@ index 36397b3..7a6e353 100644
 -#if defined(MS_WINDOWS_GAMES) && !defined(MS_WINDOWS_DESKTOP)
 +#if (defined(MS_WINDOWS_GAMES) && !defined(MS_WINDOWS_DESKTOP)) || \
 +    defined(PY_VISTA_LEGACY_SDK)
- HRESULT
+-HRESULT
++HRESULT WINAPI
  PathCchSkipRoot(const wchar_t *path, const wchar_t **rootEnd)
  {
 @@ -2247,6 +2248,10 @@ PathCchSkipRoot(const wchar_t *path, const wchar_t **rootEnd)
@@ -326,6 +327,10 @@ index 36397b3..7a6e353 100644
          if (pathapi) {
              _PathCchSkipRoot = (PPathCchSkipRoot)GetProcAddress(
                  pathapi, "PathCchSkipRoot");
+@@ -2267,2 +2272,2 @@ PathCchSkipRoot(const wchar_t *path, const wchar_t **rootEnd)
+-static HRESULT
++static HRESULT WINAPI
+ PathCchCombineEx(wchar_t *buffer, size_t bufsize, const wchar_t *dirname,
 @@ -2279,6 +2284,10 @@ PathCchCombineEx(wchar_t *buffer, size_t bufsize, const wchar_t *dirname,
      if (initialized == 0) {
 +#ifdef PY_VISTA_LEGACY_SDK
