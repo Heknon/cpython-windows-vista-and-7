@@ -43,4 +43,8 @@ typedef struct _FILE_ID_INFO {
 } FILE_ID_INFO;
 
 #define FileIdInfo ((FILE_INFO_BY_HANDLE_CLASS)18)
+
+#ifndef FILE_DEVICE_CONSOLE
+#define FILE_DEVICE_CONSOLE 0x00000050
+#endif
 #endif

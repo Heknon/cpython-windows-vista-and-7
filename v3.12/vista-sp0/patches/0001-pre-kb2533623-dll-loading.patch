@@ -98,6 +98,56 @@ diff --git a/v3.12/Python-3.12.10/Modules/posixmodule.c b/v3.12/Python-3.12.10/M
 index 97914ad..afb6b74 100644
 --- a/v3.12/Python-3.12.10/Modules/posixmodule.c
 +++ b/v3.12/Python-3.12.10/Modules/posixmodule.c
+@@ -4656,5 +4656,8 @@ os__path_isdevdrive_impl(PyObject *module, path_t *path)
+ /*[clinic end generated code: output=1f437ea6677433a2 input=ee83e4996a48e23d]*/
+ {
++#ifdef PY_VISTA_LEGACY_SDK
++    Py_RETURN_FALSE;
++#else
+ #ifndef PERSISTENT_VOLUME_STATE_DEV_VOLUME
+     /* This flag will be documented at
+        https://learn.microsoft.com/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_fs_persistent_volume_information
+@@ -4728,6 +4731,7 @@ os__path_isdevdrive_impl(PyObject *module, path_t *path)
+     }
+ 
+     return NULL;
++#endif /* PY_VISTA_LEGACY_SDK */
+ }
+ 
+ 
+@@ -8834,6 +8838,7 @@ os_setpgrp_impl(PyObject *module)
+ 
+ #ifdef MS_WINDOWS
+ #include <tlhelp32.h>
++#ifndef PY_VISTA_LEGACY_SDK
+ #include <processsnapshot.h>
+ 
+ static INIT_ONCE g_InitOnce = INIT_ONCE_STATIC_INIT;
+@@ -8859,10 +8864,12 @@ static BOOL CALLBACK Py_ProcessSnapshot_Init(PINIT_ONCE InitOnce, PVOID Paramet
+     }
+     return TRUE;
+ }
++#endif /* PY_VISTA_LEGACY_SDK */
+ 
+ static PyObject*
+ win32_getppid(void)
+ {
++#ifndef PY_VISTA_LEGACY_SDK
+     InitOnceExecuteOnce(&g_InitOnce, Py_ProcessSnapshot_Init, NULL, NULL);
+     if (Py_PssCaptureSnapshot) {
+         DWORD error;
+@@ -8886,7 +8893,10 @@ win32_getppid(void)
+ 
+         Py_PssFreeSnapshot(process, snapshot);
+         return result;
+-    } else {
++    }
++    else
++#endif /* PY_VISTA_LEGACY_SDK */
++    {
+         HANDLE snapshot;
+         pid_t mypid;
+         PyObject* result = NULL;
 @@ -15815,15 +15815,30 @@ static PyObject *
  os__add_dll_directory_impl(PyObject *module, path_t *path)
  /*[clinic end generated code: output=80b025daebb5d683 input=1de3e6c13a5808c8]*/
