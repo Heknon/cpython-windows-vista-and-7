@@ -33,6 +33,8 @@ HRESULT WINAPI PathCchSkipRoot(PCWSTR path, PCWSTR *root_end);
 #endif
 
 #ifdef PY_VISTA_LEGACY_SDK
+typedef PVOID DLL_DIRECTORY_COOKIE;
+
 typedef struct _FILE_ID_128 {
     BYTE Identifier[16];
 } FILE_ID_128;
