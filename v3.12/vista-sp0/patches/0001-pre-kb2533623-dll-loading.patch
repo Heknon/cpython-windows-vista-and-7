@@ -48,13 +48,12 @@ index 1576e44..5d81b5d 100644
  
        <Optimization>MaxSpeed</Optimization>
        <IntrinsicFunctions>true</IntrinsicFunctions>
-@@ -69,7 +69,8 @@
+@@ -69,7 +69,7 @@
        <FloatingPointModel>Strict</FloatingPointModel>
      </ClCompile>
      <Link>
 -      <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
 +      <AdditionalLibraryDirectories>$(VistaCompatLibDir)\$(Platform);$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-+      <AdditionalDependencies>pathcch.lib;%(AdditionalDependencies)</AdditionalDependencies>
        <GenerateDebugInformation>true</GenerateDebugInformation>
        <ProgramDatabaseFile>$(OutDir)$(TargetName).pdb</ProgramDatabaseFile>
        <SubSystem>Windows</SubSystem>
