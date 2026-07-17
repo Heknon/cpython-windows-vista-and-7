@@ -351,3 +351,91 @@ index 36397b3..7a6e353 100644
  
  // The caller must ensure "buffer" is big enough.
  static int
+diff --git a/v3.12/Python-3.12.10/Modules/_winapi.c b/v3.12/Python-3.12.10/Modules/_winapi.c
+index d23d6ce..a17993d 100644
+--- a/v3.12/Python-3.12.10/Modules/_winapi.c
++++ b/v3.12/Python-3.12.10/Modules/_winapi.c
+@@ -1797,8 +1797,12 @@ _winapi_LCMapStringEx_impl(PyObject *module, LPCWSTR locale, DWORD flags,
+                            PyObject *src)
+ /*[clinic end generated code: output=b90e6b26e028ff0a input=3e3dcd9b8164012f]*/
+ {
++#ifdef PY_VISTA_LEGACY_SDK
++    if (flags & (LCMAP_BYTEREV | LCMAP_SORTKEY)) {
++#else
+     if (flags & (LCMAP_SORTHANDLE | LCMAP_HASH | LCMAP_BYTEREV |
+                  LCMAP_SORTKEY)) {
++#endif
+         return PyErr_Format(PyExc_ValueError, "unsupported flags");
+     }
+ 
+@@ -2354,6 +2358,7 @@ _winapi_NeedCurrentDirectoryForExePath_impl(PyObject *module,
+     return result;
+ }
+ 
++#ifndef PY_VISTA_LEGACY_SDK
+ typedef HRESULT (WINAPI *CopyFile2Func)(PCWSTR pwszExistingFileName, PCWSTR pwszNewFileName, COPYFILE2_EXTENDED_PARAMETERS *pExtendedParameters);
+ CopyFile2Func Py_CopyFile2;
+ 
+@@ -2415,6 +2420,7 @@ _winapi_CopyFile2_impl(PyObject *module, LPCWSTR existing_file_name,
+     }
+     Py_RETURN_NONE;
+ }
++#endif
+ 
+ 
+ static PyMethodDef winapi_functions[] = {
+@@ -2454,7 +2460,9 @@ static PyMethodDef winapi_functions[] = {
+     _WINAPI_GETFILETYPE_METHODDEF
+     _WINAPI__MIMETYPES_READ_WINDOWS_REGISTRY_METHODDEF
+     _WINAPI_NEEDCURRENTDIRECTORYFOREXEPATH_METHODDEF
++#ifndef PY_VISTA_LEGACY_SDK
+     _WINAPI_COPYFILE2_METHODDEF
++#endif
+     {NULL, NULL}
+ };
+ 
+@@ -2595,7 +2603,9 @@ static int winapi_exec(PyObject *m)
+     WINAPI_CONSTANT(F_DWORD, LCMAP_LINGUISTIC_CASING);
+     WINAPI_CONSTANT(F_DWORD, LCMAP_LOWERCASE);
+     WINAPI_CONSTANT(F_DWORD, LCMAP_SIMPLIFIED_CHINESE);
++#ifndef PY_VISTA_LEGACY_SDK
+     WINAPI_CONSTANT(F_DWORD, LCMAP_TITLECASE);
++#endif
+     WINAPI_CONSTANT(F_DWORD, LCMAP_TRADITIONAL_CHINESE);
+     WINAPI_CONSTANT(F_DWORD, LCMAP_UPPERCASE);
+ 
+@@ -2603,9 +2613,10 @@ static int winapi_exec(PyObject *m)
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_COPY_SYMLINK);
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_FAIL_IF_EXISTS);
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_NO_BUFFERING);
+-    WINAPI_CONSTANT(F_DWORD, COPY_FILE_NO_OFFLOAD);
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_OPEN_SOURCE_FOR_WRITE);
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_RESTARTABLE);
++#ifndef PY_VISTA_LEGACY_SDK
++    WINAPI_CONSTANT(F_DWORD, COPY_FILE_NO_OFFLOAD);
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_REQUEST_SECURITY_PRIVILEGES);
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_RESUME_FROM_PAUSE);
+ #ifndef COPY_FILE_REQUEST_COMPRESSED_TRAFFIC
+@@ -2626,6 +2637,7 @@ static int winapi_exec(PyObject *m)
+     WINAPI_CONSTANT(F_DWORD, COPYFILE2_PROGRESS_STOP);
+     WINAPI_CONSTANT(F_DWORD, COPYFILE2_PROGRESS_QUIET);
+     WINAPI_CONSTANT(F_DWORD, COPYFILE2_PROGRESS_PAUSE);
++#endif
+ 
+     WINAPI_CONSTANT("i", NULL);
+ 
+@@ -2674,6 +2686,7 @@ static struct PyModuleDef winapi_module = {
+ PyMODINIT_FUNC
+ PyInit__winapi(void)
+ {
++#ifndef PY_VISTA_LEGACY_SDK
+     HMODULE hKernel32 = GetModuleHandleW(L"kernel32");
+     if (!hKernel32) return NULL;
+     if (!(Py_CopyFile2 = (CopyFile2Func)GetProcAddress(hKernel32, "CopyFile2"))) {
+@@ -2690,5 +2703,6 @@ PyInit__winapi(void)
+             }
+         }
+     }
++#endif
+     return PyModuleDef_Init(&winapi_module);
+ }
