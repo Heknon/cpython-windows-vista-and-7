@@ -1,4 +1,5 @@
-@(
+@{
+Dlls = @(
     # This is deliberately a DLL-name allowlist, not an export allowlist.
     # It only permits system DLLs that shipped in Vista RTM. Exact imported
     # symbols still require validation against exports captured from an RTM VM.
@@ -18,3 +19,4 @@
     "WINMM.DLL"
     "WS2_32.DLL"
 )
+}

@@ -32,7 +32,7 @@ $forbiddenImports = @(
 )
 
 $allowedSystemDlls = @(
-    Import-PowerShellDataFile $AllowedSystemDllsPath |
+    (Import-PowerShellDataFile $AllowedSystemDllsPath).Dlls |
         ForEach-Object { $_.ToUpperInvariant() }
 )
 $packagedDlls = @{}
