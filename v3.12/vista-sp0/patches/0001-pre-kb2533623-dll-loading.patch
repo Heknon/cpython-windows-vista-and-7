@@ -301,3 +301,48 @@ index acab05e..5c18ece 100644
          Py_END_ALLOW_THREADS
          PyMem_Free(wpathname);
  
+diff --git a/v3.12/Python-3.12.10/Python/fileutils.c b/v3.12/Python-3.12.10/Python/fileutils.c
+index 36397b3..7a6e353 100644
+--- a/v3.12/Python-3.12.10/Python/fileutils.c
++++ b/v3.12/Python-3.12.10/Python/fileutils.c
+@@ -2235,7 +2235,8 @@ _Py_abspath(const wchar_t *path, wchar_t **abspath_p)
+ // but does not expose them yet. Load them dynamically until
+ // 1) they are officially exposed
+ // 2) we stop supporting older versions of the GDK which do not expose them
+-#if defined(MS_WINDOWS_GAMES) && !defined(MS_WINDOWS_DESKTOP)
++#if (defined(MS_WINDOWS_GAMES) && !defined(MS_WINDOWS_DESKTOP)) || \
++    defined(PY_VISTA_LEGACY_SDK)
+ HRESULT
+ PathCchSkipRoot(const wchar_t *path, const wchar_t **rootEnd)
+ {
+@@ -2247,6 +2248,10 @@ PathCchSkipRoot(const wchar_t *path, const wchar_t **rootEnd)
+     if (initialized == 0) {
++#ifdef PY_VISTA_LEGACY_SDK
++        HMODULE pathapi = LoadLibraryW(L"api-ms-win-core-path-l1-1-0.dll");
++#else
+         HMODULE pathapi = LoadLibraryExW(L"api-ms-win-core-path-l1-1-0.dll", NULL,
+                                          LOAD_LIBRARY_SEARCH_SYSTEM32);
++#endif
+         if (pathapi) {
+             _PathCchSkipRoot = (PPathCchSkipRoot)GetProcAddress(
+                 pathapi, "PathCchSkipRoot");
+@@ -2279,6 +2284,10 @@ PathCchCombineEx(wchar_t *buffer, size_t bufsize, const wchar_t *dirname,
+     if (initialized == 0) {
++#ifdef PY_VISTA_LEGACY_SDK
++        HMODULE pathapi = LoadLibraryW(L"api-ms-win-core-path-l1-1-0.dll");
++#else
+         HMODULE pathapi = LoadLibraryExW(L"api-ms-win-core-path-l1-1-0.dll", NULL,
+                                          LOAD_LIBRARY_SEARCH_SYSTEM32);
++#endif
+         if (pathapi) {
+             _PathCchCombineEx = (PPathCchCombineEx)GetProcAddress(
+                 pathapi, "PathCchCombineEx");
+@@ -2296,7 +2305,7 @@ PathCchCombineEx(wchar_t *buffer, size_t bufsize, const wchar_t *dirname,
+     return _PathCchCombineEx(buffer, bufsize, dirname, relfile, flags);
+ }
+ 
+-#endif /* defined(MS_WINDOWS_GAMES) && !defined(MS_WINDOWS_DESKTOP) */
++#endif /* Games API family or Vista compatibility build */
+ 
+ // The caller must ensure "buffer" is big enough.
+ static int
