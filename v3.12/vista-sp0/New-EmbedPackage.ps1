@@ -144,7 +144,7 @@ $vc140Runtime = $vc140Runtimes | Where-Object {
 } | Select-Object -First 1
 
 if (!$vc140Runtime) {
-    Write-Host "VC141 runtime candidates for $sdkArch:"
+    Write-Host "VC141 runtime candidates for ${sdkArch}:"
     $vc140Runtimes | ForEach-Object {
         $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         Write-Host "  $($_.VersionInfo.FileVersion) $hash $($_.FullName)"
@@ -158,8 +158,8 @@ if (!$vc140VersionMatch.Success) {
     throw "Could not parse the VC140 runtime version at $($vc140Runtime.FullName)."
 }
 $vc140Version = [Version]$vc140VersionMatch.Value
-if ($vc140Version.Major -ne 14 -or $vc140Version.Minor -ne 0) {
-    throw "Expected a 14.0 VC140 runtime, found $vc140Version at $($vc140Runtime.FullName)."
+if ($vc140Version.Major -ne 14 -or $vc140Version.Minor -lt 10 -or $vc140Version.Minor -ge 20) {
+    throw "Expected a 14.1x VC141 runtime, found $vc140Version at $($vc140Runtime.FullName)."
 }
 Copy-Item $vc140Runtime.FullName $packageDirectory -Force
 
