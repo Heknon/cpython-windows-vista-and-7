@@ -53,7 +53,7 @@ index 1576e44..5d81b5d 100644
      </ClCompile>
      <Link>
 -      <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-+      <AdditionalLibraryDirectories>$(VistaCompatLibDir);$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
++      <AdditionalLibraryDirectories>$(VistaCompatLibDir)\$(Platform);$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
        <GenerateDebugInformation>true</GenerateDebugInformation>
        <ProgramDatabaseFile>$(OutDir)$(TargetName).pdb</ProgramDatabaseFile>
        <SubSystem>Windows</SubSystem>

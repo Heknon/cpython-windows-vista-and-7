@@ -50,11 +50,13 @@ jobs:
             Where-Object { $_.FullName -match "Hostx64\\x64" } |
             Select-Object -First 1
           if (!$lib) { throw "lib.exe was not found." }
-          $machine = if ("${{ matrix.platform }}" -eq "Win32") { "X86" } else { "X64" }
-          $compatLib = "${{ runner.temp }}\vista-compat-lib-${{ matrix.package_arch }}"
-          New-Item -ItemType Directory -Force -Path $compatLib | Out-Null
-          & $lib.FullName /nologo "/def:${{ github.workspace }}\v3.12\vista-sp0\pathcch.def" "/machine:$machine" "/out:$compatLib\pathcch.lib"
-          if ($LASTEXITCODE -ne 0) { throw "Creating pathcch.lib failed." }
+          $compatLib = "${{ runner.temp }}\vista-compat-lib"
+          foreach ($target in @(@{ Directory = "Win32"; Machine = "X86" }, @{ Directory = "x64"; Machine = "X64" })) {
+            $targetDirectory = Join-Path $compatLib $target.Directory
+            New-Item -ItemType Directory -Force -Path $targetDirectory | Out-Null
+            & $lib.FullName /nologo "/def:${{ github.workspace }}\v3.12\vista-sp0\pathcch.def" "/machine:$($target.Machine)" "/out:$targetDirectory\pathcch.lib"
+            if ($LASTEXITCODE -ne 0) { throw "Creating $($target.Directory) pathcch.lib failed." }
+          }
 
       - name: Build CPython
         shell: cmd
@@ -66,7 +68,7 @@ jobs:
           -c Release
           "/p:PlatformToolset=v141_xp"
           "/p:WindowsTargetPlatformVersion=7.0"
-          "/p:VistaCompatLibDir=${{ runner.temp }}\vista-compat-lib-${{ matrix.package_arch }}"
+          "/p:VistaCompatLibDir=${{ runner.temp }}\vista-compat-lib"
 
       - name: Create and audit app-local embeddable package
         shell: pwsh
