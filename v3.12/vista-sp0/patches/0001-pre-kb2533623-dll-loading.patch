@@ -2,6 +2,25 @@ diff --git a/v3.12/Python-3.12.10/PC/pyconfig.h b/v3.12/Python-3.12.10/PC/pyconf
 index 2f54e1c..94c5a0a 100644
 --- a/v3.12/Python-3.12.10/PC/pyconfig.h
 +++ b/v3.12/Python-3.12.10/PC/pyconfig.h
+@@ -73,6 +73,10 @@
+ #endif
+ 
+ #if defined(Py_BUILD_CORE) || defined(Py_BUILD_CORE_BUILTIN) || defined(Py_BUILD_CORE_MODULE)
++#ifdef PY_VISTA_LEGACY_SDK
++#define MS_WINDOWS_DESKTOP
++#define HAVE_WINDOWS_CONSOLE_IO 1
++#else
+ #include <winapifamily.h>
+ 
+ #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+@@ -92,6 +96,7 @@
+ #if defined(MS_WINDOWS_DESKTOP) || defined(MS_WINDOWS_APP) || defined(MS_WINDOWS_SYSTEM)
+ #define HAVE_WINDOWS_CONSOLE_IO 1
+ #endif
++#endif /* PY_VISTA_LEGACY_SDK */
+ #endif /* Py_BUILD_CORE || Py_BUILD_CORE_BUILTIN || Py_BUILD_CORE_MODULE */
+ 
+ /* Compiler specific defines */
 @@ -161,9 +161,9 @@ typedef int ssize_t;
  #endif /* MS_WIN64 */
  
@@ -24,7 +43,7 @@ index 1576e44..5d81b5d 100644
      <ClCompile>
        <AdditionalIncludeDirectories>$(PySourcePath)Include;$(PySourcePath)Include\internal;$(PySourcePath)PC;$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
 -      <PreprocessorDefinitions>WIN32;$(_Py3NamePreprocessorDefinition);$(_PlatformPreprocessorDefinition)$(_DebugPreprocessorDefinition)$(_PydPreprocessorDefinition)%(PreprocessorDefinitions)</PreprocessorDefinitions>
-+      <PreprocessorDefinitions>WINVER=0x0600;_WIN32_WINNT=0x0600;NTDDI_VERSION=NTDDI_VISTA;WIN32;$(_Py3NamePreprocessorDefinition);$(_PlatformPreprocessorDefinition)$(_DebugPreprocessorDefinition)$(_PydPreprocessorDefinition)%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PreprocessorDefinitions>PY_VISTA_LEGACY_SDK;WINVER=0x0600;_WIN32_WINNT=0x0600;NTDDI_VERSION=NTDDI_VISTA;WIN32;$(_Py3NamePreprocessorDefinition);$(_PlatformPreprocessorDefinition)$(_DebugPreprocessorDefinition)$(_PydPreprocessorDefinition)%(PreprocessorDefinitions)</PreprocessorDefinitions>
  
        <Optimization>MaxSpeed</Optimization>
        <IntrinsicFunctions>true</IntrinsicFunctions>
