@@ -26,9 +26,9 @@ architecture.
 - The app-local UCRT and VC141 runtime payloads are selected by exact SHA-256
   digests in `RuntimeHashes.psd1`; runner directory ordering cannot silently
   change the shipped runtime.
-- The PE audit checks the dependency closure, PE subsystem version, and known
-  post-Vista imports. A DLL that is neither packaged nor in the Vista RTM
-  system-DLL allowlist fails the build.
+- The PE audit checks the dependency closure, executable subsystem version,
+  and known post-Vista imports. A DLL that is neither packaged nor in the
+  Vista RTM system-DLL allowlist fails the build.
 - The packaged smoke test imports every `.pyd` in the artifact and exercises
   files, compression, hashing, XML, SQLite, SSL initialization, `ctypes`,
   threads, subprocesses, TCP loopback, and `asyncio`.

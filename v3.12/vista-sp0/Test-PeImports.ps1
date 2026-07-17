@@ -94,12 +94,18 @@ foreach ($binary in $binaries) {
         }
     }
 
-    $headers = & $dumpbin.FullName /nologo /headers $binary.FullName 2>&1 | Out-String
-    $subsystem = [regex]::Match($headers, "(?m)^\s+([0-9]+\.[0-9]+) subsystem version\s*$")
-    if (!$subsystem.Success) {
-        $failures.Add("could not read the PE subsystem version for $($binary.Name)")
-    } elseif ([Version]$subsystem.Groups[1].Value -gt [Version]"6.0") {
-        $failures.Add("$($binary.Name) requires subsystem version $($subsystem.Groups[1].Value)")
+    # Windows enforces the subsystem-version floor on process images. Microsoft
+    # UCRT forwarder DLLs intentionally carry 10.0 headers while supporting
+    # app-local deployment on Vista, so applying the EXE rule to DLLs rejects
+    # the documented down-level runtime payload.
+    if ($binary.Extension -eq ".exe") {
+        $headers = & $dumpbin.FullName /nologo /headers $binary.FullName 2>&1 | Out-String
+        $subsystem = [regex]::Match($headers, "(?m)^\s+([0-9]+\.[0-9]+) subsystem version\s*$")
+        if (!$subsystem.Success) {
+            $failures.Add("could not read the PE subsystem version for $($binary.Name)")
+        } elseif ([Version]$subsystem.Groups[1].Value -gt [Version]"6.0") {
+            $failures.Add("$($binary.Name) requires subsystem version $($subsystem.Groups[1].Value)")
+        }
     }
 }
 
@@ -107,7 +113,7 @@ $reportPath = Join-Path $PackageDirectory "PE-IMPORTS.json"
 $dependencyReport | ConvertTo-Json -Depth 4 | Set-Content $reportPath -Encoding UTF8
 
 if ($failures.Count -gt 0) {
-    $failures | ForEach-Object { Write-Error $_ }
+    $failures | ForEach-Object { Write-Error $_ -ErrorAction Continue }
     throw "The package contains APIs that are unavailable on Vista RTM."
 }
 
