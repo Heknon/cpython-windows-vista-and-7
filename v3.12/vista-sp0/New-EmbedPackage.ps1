@@ -18,6 +18,24 @@ $buildDirectory = Join-Path $sourceRoot "PCbuild\$buildArch"
 $packageDirectory = Join-Path $OutputDirectory "python-3.12.10-vista-sp0-$sdkArch"
 $packageZip = "$packageDirectory.zip"
 $tempDirectory = Join-Path $env:RUNNER_TEMP "python-layout-$sdkArch"
+$runtimeHashes = Import-PowerShellDataFile (Join-Path $PSScriptRoot "RuntimeHashes.psd1")
+$expectedHashes = $runtimeHashes[$sdkArch]
+
+function Test-ExpectedHash {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ExpectedHash
+    )
+
+    if (!(Test-Path $Path -PathType Leaf)) {
+        return $false
+    }
+    $actualHash = (Get-FileHash $Path -Algorithm SHA256).Hash.ToLowerInvariant()
+    return $actualHash -eq $ExpectedHash
+}
 
 function Get-Vc140RuntimeFromRedist {
     param(
@@ -89,35 +107,47 @@ if ($LASTEXITCODE -ne 0) {
     throw "Creating the embeddable layout failed with exit code $LASTEXITCODE."
 }
 
-# Vista RTM cannot rely on the system Universal CRT update.  Copy the UCRT
-# API-set forwarders and ucrtbase.dll beside python.exe for app-local loading.
+# Vista RTM cannot rely on the system Universal CRT update. Select one exact,
+# reviewed UCRT payload by content rather than accepting whichever SDK happens
+# to sort first on the runner.
 $ucrtDirectories = Get-ChildItem (Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\Redist") `
     -Directory -Recurse -ErrorAction SilentlyContinue |
     Where-Object { $_.FullName -match "\\ucrt\\DLLs\\$sdkArch$" } |
-    Sort-Object FullName -Descending
+    Sort-Object FullName
 
-$ucrtDirectory = $ucrtDirectories | Select-Object -First 1
+$ucrtFiles = $expectedHashes.Keys | Where-Object { $_ -ne "vcruntime140.dll" }
+$ucrtDirectory = $ucrtDirectories | Where-Object {
+    $candidate = $_.FullName
+    @($ucrtFiles | Where-Object {
+        !(Test-ExpectedHash (Join-Path $candidate $_) $expectedHashes[$_])
+    }).Count -eq 0
+} | Select-Object -First 1
 if (!$ucrtDirectory) {
-    throw "Could not locate an app-local UCRT directory for $sdkArch."
+    throw "Could not locate the reviewed app-local UCRT payload for $sdkArch."
 }
-Copy-Item (Join-Path $ucrtDirectory.FullName "*.dll") $packageDirectory -Force
+foreach ($fileName in $ucrtFiles) {
+    Copy-Item (Join-Path $ucrtDirectory.FullName $fileName) $packageDirectory -Force
+}
+Write-Host "Selected reviewed UCRT payload from $($ucrtDirectory.FullName)."
 
 # The current VC runtime has a Windows 7 floor.  Locate the runtime installed
 # with the v140 toolset and replace the copy selected by the normal build.
 $visualStudioRoot = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio"
-$vc140Runtime = Get-ChildItem $visualStudioRoot -Filter "vcruntime140.dll" -File -Recurse |
+$vc140Runtimes = Get-ChildItem $visualStudioRoot -Filter "vcruntime140.dll" -File -Recurse |
     Where-Object {
         $_.FullName -match "Microsoft\.VC140\.CRT" -and
         $_.FullName -match "\\$sdkArch\\"
     } |
-    Sort-Object FullName |
-    Select-Object -First 1
+    Sort-Object FullName
+$vc140Runtime = $vc140Runtimes | Where-Object {
+    Test-ExpectedHash $_.FullName $expectedHashes["vcruntime140.dll"]
+} | Select-Object -First 1
 
 if (!$vc140Runtime) {
     $vc140Runtime = Get-Vc140RuntimeFromRedist -Architecture $sdkArch
 }
-if (!$vc140Runtime) {
-    throw "Could not locate or extract the $sdkArch Microsoft.VC140.CRT runtime."
+if (!$vc140Runtime -or !(Test-ExpectedHash $vc140Runtime.FullName $expectedHashes["vcruntime140.dll"])) {
+    throw "Could not locate the reviewed $sdkArch Microsoft.VC140.CRT runtime."
 }
 $vc140VersionMatch = [regex]::Match($vc140Runtime.VersionInfo.FileVersion, "^\d+\.\d+\.\d+\.\d+")
 if (!$vc140VersionMatch.Success) {
@@ -128,6 +158,38 @@ if ($vc140Version.Major -ne 14 -or $vc140Version.Minor -ne 0) {
     throw "Expected a 14.0 VC140 runtime, found $vc140Version at $($vc140Runtime.FullName)."
 }
 Copy-Item $vc140Runtime.FullName $packageDirectory -Force
+
+foreach ($fileName in $expectedHashes.Keys) {
+    $path = Join-Path $packageDirectory $fileName
+    if (!(Test-ExpectedHash $path $expectedHashes[$fileName])) {
+        throw "$fileName does not match its reviewed SHA-256 digest."
+    }
+}
+
+# Put the tests beside python.exe so the same bits tested by Actions can be
+# copied directly into a clean RTM guest without checking out the repository.
+Copy-Item (Join-Path $PSScriptRoot "smoke_test.py") $packageDirectory -Force
+Copy-Item (Join-Path $PSScriptRoot "guest_validate.py") $packageDirectory -Force
+Copy-Item (Join-Path $PSScriptRoot "guest_validate.cmd") $packageDirectory -Force
+
+& (Join-Path $PSScriptRoot "Test-PeImports.ps1") -PackageDirectory $packageDirectory
+if ($LASTEXITCODE -ne 0) {
+    throw "PE dependency-closure audit failed with exit code $LASTEXITCODE."
+}
+
+$manifestFiles = Get-ChildItem $packageDirectory -File -Recurse | Sort-Object FullName
+$manifest = [ordered]@{
+    python = "3.12.10"
+    architecture = $sdkArch
+    files = @($manifestFiles | ForEach-Object {
+        [ordered]@{
+            path = $_.FullName.Substring($packageDirectory.Length + 1).Replace("\\", "/")
+            sha256 = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+    })
+}
+$manifest | ConvertTo-Json -Depth 4 | Set-Content `
+    (Join-Path $packageDirectory "ARTIFACT-MANIFEST.json") -Encoding UTF8
 
 if (Test-Path $packageZip) {
     Remove-Item -Force $packageZip

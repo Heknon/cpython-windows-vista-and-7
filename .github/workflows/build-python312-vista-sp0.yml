@@ -31,7 +31,7 @@ jobs:
       - name: Configure MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Install Vista-compatible v140 toolset
+      - name: Install Vista-compatible v140_xp toolset
         shell: pwsh
         run: ./v3.12/vista-sp0/Install-V140Toolset.ps1
 
@@ -49,27 +49,21 @@ jobs:
           v3.12\Python-3.12.10\PCbuild\build.bat
           -p ${{ matrix.platform }}
           -c Release
-          "/p:PlatformToolset=v140"
-          "/p:WindowsTargetPlatformVersion=10.0.19041.0"
+          "/p:PlatformToolset=v140_xp"
+          "/p:WindowsTargetPlatformVersion=7.0"
 
-      - name: Create app-local embeddable package
+      - name: Create and audit app-local embeddable package
         shell: pwsh
         run: >-
           ./v3.12/vista-sp0/New-EmbedPackage.ps1
           -Platform ${{ matrix.platform }}
           -OutputDirectory "${{ github.workspace }}/artifacts"
 
-      - name: Audit Windows API imports
-        shell: pwsh
-        run: >-
-          ./v3.12/vista-sp0/Test-PeImports.ps1
-          -PackageDirectory "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}"
-
       - name: Run smoke tests on the build host
         shell: pwsh
         run: >-
           & "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/python.exe"
-          "${{ github.workspace }}/v3.12/vista-sp0/smoke_test.py"
+          "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/smoke_test.py"
 
       - name: Upload embeddable package
         uses: actions/upload-artifact@v4
@@ -77,3 +71,11 @@ jobs:
           name: python-3.12.10-vista-sp0-${{ matrix.platform }}
           path: artifacts/python-3.12.10-vista-sp0-*.zip
           if-no-files-found: error
+
+      - name: Upload unpacked validation bundle on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-3.12.10-vista-sp0-${{ matrix.platform }}-diagnostics
+          path: artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/
+          if-no-files-found: ignore

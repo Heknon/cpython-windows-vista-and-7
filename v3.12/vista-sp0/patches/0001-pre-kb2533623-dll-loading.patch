@@ -1,3 +1,33 @@
+diff --git a/v3.12/Python-3.12.10/PC/pyconfig.h b/v3.12/Python-3.12.10/PC/pyconfig.h
+index 2f54e1c..94c5a0a 100644
+--- a/v3.12/Python-3.12.10/PC/pyconfig.h
++++ b/v3.12/Python-3.12.10/PC/pyconfig.h
+@@ -161,9 +161,9 @@ typedef int ssize_t;
+ #endif /* MS_WIN64 */
+ 
+ /* set the version macros for the windows headers */
+-/* Python 3.12+ requires Windows 8.1 or greater */
+-#define Py_WINVER 0x0603 /* _WIN32_WINNT_WINBLUE (8.1) */
+-#define Py_NTDDI NTDDI_WINBLUE
++/* This compatibility build deliberately targets Windows Vista. */
++#define Py_WINVER 0x0600 /* _WIN32_WINNT_VISTA */
++#define Py_NTDDI NTDDI_VISTA
+ 
+ /* We only set these values when building Python - we don't want to force
+    these values on extensions, as that will affect the prototypes and
+diff --git a/v3.12/Python-3.12.10/PCbuild/pyproject.props b/v3.12/Python-3.12.10/PCbuild/pyproject.props
+index 1576e44..5d81b5d 100644
+--- a/v3.12/Python-3.12.10/PCbuild/pyproject.props
++++ b/v3.12/Python-3.12.10/PCbuild/pyproject.props
+@@ -39,7 +39,7 @@
+   <ItemDefinitionGroup>
+     <ClCompile>
+       <AdditionalIncludeDirectories>$(PySourcePath)Include;$(PySourcePath)Include\internal;$(PySourcePath)PC;$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+-      <PreprocessorDefinitions>WIN32;$(_Py3NamePreprocessorDefinition);$(_PlatformPreprocessorDefinition)$(_DebugPreprocessorDefinition)$(_PydPreprocessorDefinition)%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <PreprocessorDefinitions>WINVER=0x0600;_WIN32_WINNT=0x0600;NTDDI_VERSION=NTDDI_VISTA;WIN32;$(_Py3NamePreprocessorDefinition);$(_PlatformPreprocessorDefinition)$(_DebugPreprocessorDefinition)$(_PydPreprocessorDefinition)%(PreprocessorDefinitions)</PreprocessorDefinitions>
+ 
+       <Optimization>MaxSpeed</Optimization>
+       <IntrinsicFunctions>true</IntrinsicFunctions>
 diff --git a/v3.12/Python-3.12.10/Modules/posixmodule.c b/v3.12/Python-3.12.10/Modules/posixmodule.c
 index 97914ad..afb6b74 100644
 --- a/v3.12/Python-3.12.10/Modules/posixmodule.c
@@ -153,4 +183,3 @@ index acab05e..5c18ece 100644
 +            LOAD_WITH_ALTERED_SEARCH_PATH);
          Py_END_ALLOW_THREADS
          PyMem_Free(wpathname);
- 
