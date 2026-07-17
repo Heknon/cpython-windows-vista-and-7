@@ -73,6 +73,8 @@ jobs:
           "/p:PlatformToolset=v141_xp"
           "/p:WindowsTargetPlatformVersion=7.0"
           "/p:VistaCompatLibDir=${{ runner.temp }}\vista-compat-lib"
+          "/p:VistaEmbedOnly=true"
+          "/p:IncludeTests=false"
 
       - name: Create and audit app-local embeddable package
         shell: pwsh

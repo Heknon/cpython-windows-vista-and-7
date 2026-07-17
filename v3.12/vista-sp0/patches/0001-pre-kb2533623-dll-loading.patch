@@ -457,3 +457,52 @@ index 97914ad..9c64d25 100644
 -    HMODULE hKernel32 = GetModuleHandle("kernel32.dll");
 +    HMODULE hKernel32 = GetModuleHandleW(L"kernel32.dll");
      typedef DWORD (WINAPI *LPFN_GETACTIVEPROCESSORCOUNT)(WORD);
+diff --git a/v3.12/Python-3.12.10/Modules/socketmodule.c b/v3.12/Python-3.12.10/Modules/socketmodule.c
+index 25df137..34b5e22 100644
+--- a/v3.12/Python-3.12.10/Modules/socketmodule.c
++++ b/v3.12/Python-3.12.10/Modules/socketmodule.c
+@@ -316,3 +316,5 @@ shutdown(how) -- shut down traffic in one or both directions\n\
+ /* Provides the IsWindows7SP1OrGreater() function */
++#ifndef PY_VISTA_LEGACY_SDK
+ #include <versionhelpers.h>
++#endif
+ // For if_nametoindex() and if_indextoname()
+diff --git a/v3.12/Python-3.12.10/PCbuild/pcbuild.proj b/v3.12/Python-3.12.10/PCbuild/pcbuild.proj
+index 28269f0..f44da39 100644
+--- a/v3.12/Python-3.12.10/PCbuild/pcbuild.proj
++++ b/v3.12/Python-3.12.10/PCbuild/pcbuild.proj
+@@ -15,4 +15,5 @@
+     <IncludeSSL Condition="'$(IncludeSSL)' == ''">true</IncludeSSL>
+     <IncludeTkinter Condition="'$(IncludeTkinter)' == ''">true</IncludeTkinter>
+     <IncludeUwp Condition="'$(IncludeUwp)' == ''">false</IncludeUwp>
++    <VistaEmbedOnly Condition="'$(VistaEmbedOnly)' == ''">false</VistaEmbedOnly>
+   </PropertyGroup>
+@@ -60,16 +61,17 @@
+     <!-- python3.dll -->
+     <Projects Include="python3dll.vcxproj" />
+     <!-- py[w].exe -->
+-    <Projects Include="pylauncher.vcxproj;pywlauncher.vcxproj" />
++    <Projects Include="pylauncher.vcxproj;pywlauncher.vcxproj" Condition="'$(VistaEmbedOnly)' != 'true'" />
+     <!-- pyshellext.dll -->
+-    <Projects Include="pyshellext.vcxproj" />
++    <Projects Include="pyshellext.vcxproj" Condition="'$(VistaEmbedOnly)' != 'true'" />
+     <!-- Extension modules -->
+-    <ExtensionModules Include="_asyncio;_zoneinfo;_decimal;_elementtree;_msi;_multiprocessing;_overlapped;pyexpat;_queue;select;unicodedata;winsound;_uuid;_wmi" />
++    <ExtensionModules Include="_asyncio;_zoneinfo;_decimal;_elementtree;_msi;_multiprocessing;_overlapped;pyexpat;_queue;select;unicodedata;winsound;_uuid" />
++    <ExtensionModules Include="_wmi" Condition="'$(VistaEmbedOnly)' != 'true'" />
+     <ExtensionModules Include="_ctypes" Condition="$(IncludeCTypes)" />
+     <!-- Extension modules that require external sources -->
+     <ExternalModules Include="_bz2;_lzma;_sqlite3" />
+     <!-- venv launchers -->
+-    <Projects Include="venvlauncher.vcxproj;venvwlauncher.vcxproj" />
++    <Projects Include="venvlauncher.vcxproj;venvwlauncher.vcxproj" Condition="'$(VistaEmbedOnly)' != 'true'" />
+     <!-- _ssl will build _socket as well, which may cause conflicts in parallel builds -->
+     <ExtensionModules Include="_socket" Condition="!$(IncludeSSL) or !$(IncludeExternals)" />
+     <ExternalModules Include="_ssl;_hashlib" Condition="$(IncludeSSL)" />
+@@ -91,5 +93,5 @@
+     <Projects2 Include="python.vcxproj;pythonw.vcxproj" />
+     <Projects2 Include="python_uwp.vcxproj;pythonw_uwp.vcxproj" Condition="$(IncludeUwp)" />
+     <!-- venv[w]launcher.exe -->
+-    <Projects2 Include="venvlauncher.vcxproj;venvwlauncher.vcxproj" />
++    <Projects2 Include="venvlauncher.vcxproj;venvwlauncher.vcxproj" Condition="'$(VistaEmbedOnly)' != 'true'" />
+   </ItemGroup>
