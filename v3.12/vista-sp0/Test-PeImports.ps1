@@ -41,6 +41,7 @@ Get-ChildItem $PackageDirectory -File -Recurse | ForEach-Object {
 }
 
 $failures = New-Object System.Collections.Generic.List[string]
+$missingDependencies = New-Object System.Collections.Generic.HashSet[string]
 $dependencyReport = New-Object System.Collections.Generic.List[object]
 $binaries = Get-ChildItem $PackageDirectory -File -Recurse |
     Where-Object { $_.Extension -in @(".dll", ".exe", ".pyd") }
@@ -82,6 +83,7 @@ foreach ($binary in $binaries) {
 
     foreach ($dependency in $dependencies) {
         if (!$packagedDlls.ContainsKey($dependency) -and $dependency -notin $allowedSystemDlls) {
+            [void]$missingDependencies.Add($dependency)
             $failures.Add(
                 "$($binary.Name) imports $dependency, which is neither packaged nor allowed on Vista RTM"
             )
@@ -113,6 +115,27 @@ $reportPath = Join-Path $PackageDirectory "PE-IMPORTS.json"
 $dependencyReport | ConvertTo-Json -Depth 4 | Set-Content $reportPath -Encoding UTF8
 
 if ($failures.Count -gt 0) {
+    if ($missingDependencies.Count -gt 0) {
+        $redistRoots = @(
+            (Join-Path ${env:ProgramFiles(x86)} "Windows Kits\10\Redist")
+            (Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio")
+        ) | Where-Object { Test-Path $_ }
+        $redistFiles = @($redistRoots | ForEach-Object {
+            Get-ChildItem $_ -File -Recurse -ErrorAction SilentlyContinue
+        })
+        foreach ($dependency in ($missingDependencies | Sort-Object)) {
+            Write-Host "Redistributable candidates for ${dependency}:"
+            $candidates = @($redistFiles | Where-Object { $_.Name -ieq $dependency })
+            if ($candidates.Count -eq 0) {
+                Write-Host "  none"
+                continue
+            }
+            $candidates | ForEach-Object {
+                $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+                Write-Host "  $($_.VersionInfo.FileVersion) $hash $($_.FullName)"
+            }
+        }
+    }
     $failures | ForEach-Object { Write-Error $_ -ErrorAction Continue }
     throw "The package contains APIs that are unavailable on Vista RTM."
 }
