@@ -15,8 +15,10 @@ if (!$installPath) {
     throw "No Visual Studio installation was found."
 }
 
-$v140Targets = Get-ChildItem $installPath -Filter "Microsoft.Cpp.Win32.v140_xp.props" `
-    -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+$v140Targets = Get-ChildItem $installPath -Filter "Toolset.props" `
+    -File -Recurse -ErrorAction SilentlyContinue |
+    Where-Object { $_.FullName -match "\\PlatformToolsets\\v140_xp\\Toolset\.props$" } |
+    Select-Object -First 1
 if (!$v140Targets) {
     Write-Host "Installing the MSVC v140 toolset and Windows XP support into $installPath"
     $arguments = @(
@@ -32,8 +34,10 @@ if (!$v140Targets) {
     if ($process.ExitCode -notin @(0, 3010)) {
         throw "Visual Studio Installer failed with exit code $($process.ExitCode)."
     }
-    $v140Targets = Get-ChildItem $installPath -Filter "Microsoft.Cpp.Win32.v140_xp.props" `
-        -File -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    $v140Targets = Get-ChildItem $installPath -Filter "Toolset.props" `
+        -File -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -match "\\PlatformToolsets\\v140_xp\\Toolset\.props$" } |
+        Select-Object -First 1
 }
 
 if (!$v140Targets) {
