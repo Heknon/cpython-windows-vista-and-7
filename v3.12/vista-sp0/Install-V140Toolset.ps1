@@ -15,16 +15,15 @@ if (!$installPath) {
     throw "No Visual Studio installation was found."
 }
 
-$v140Targets = Get-ChildItem $installPath -Filter "Toolset.props" `
+$xpTargets = Get-ChildItem $installPath -Filter "Toolset.props" `
     -File -Recurse -ErrorAction SilentlyContinue |
-    Where-Object { $_.FullName -match "\\PlatformToolsets\\v140_xp\\Toolset\.props$" } |
+    Where-Object { $_.FullName -match "\\PlatformToolsets\\v141_xp\\Toolset\.props$" } |
     Select-Object -First 1
-if (!$v140Targets) {
-    Write-Host "Installing the MSVC v140 toolset and Windows XP support into $installPath"
+if (!$xpTargets) {
+    Write-Host "Installing the MSVC v141_xp toolset into $installPath"
     $arguments = @(
         "modify"
         "--installPath", "`"$installPath`""
-        "--add", "Microsoft.VisualStudio.Component.VC.140"
         "--add", "Microsoft.VisualStudio.Component.WinXP"
         "--quiet"
         "--norestart"
@@ -34,14 +33,14 @@ if (!$v140Targets) {
     if ($process.ExitCode -notin @(0, 3010)) {
         throw "Visual Studio Installer failed with exit code $($process.ExitCode)."
     }
-    $v140Targets = Get-ChildItem $installPath -Filter "Toolset.props" `
+    $xpTargets = Get-ChildItem $installPath -Filter "Toolset.props" `
         -File -Recurse -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -match "\\PlatformToolsets\\v140_xp\\Toolset\.props$" } |
+        Where-Object { $_.FullName -match "\\PlatformToolsets\\v141_xp\\Toolset\.props$" } |
         Select-Object -First 1
 }
 
-if (!$v140Targets) {
-    throw "The v140_xp platform toolset was not found after installation."
+if (!$xpTargets) {
+    throw "The v141_xp platform toolset was not found after installation."
 }
 
 $sdk71a = Get-ItemProperty `
@@ -51,5 +50,5 @@ if (!$sdk71a -or !(Test-Path $sdk71a.InstallationFolder)) {
     throw "The Windows 7.1A SDK required by v140_xp was not found."
 }
 
-Write-Host "MSVC v140_xp is available at $($v140Targets.FullName)."
+Write-Host "MSVC v141_xp is available at $($xpTargets.FullName)."
 Write-Host "Windows 7.1A SDK is available at $($sdk71a.InstallationFolder)."

@@ -15,7 +15,7 @@ architecture.
   build, leaving the imported Vista fork easy to refresh from upstream.
 - `Py_WINVER`, `WINVER`, and `_WIN32_WINNT` are set to `0x0600`, and
   `NTDDI_VERSION` is set to `NTDDI_VISTA` throughout the CPython build.
-- The build uses the `v140_xp` platform toolset and Windows 7.1A SDK instead
+- The build uses the `v141_xp` platform toolset and Windows 7.1A SDK instead
   of compiling against the Windows 10 SDK contract.
 - `AddDllDirectory` and `RemoveDllDirectory` are resolved with
   `GetProcAddress`, preventing the Windows loader from rejecting
@@ -54,13 +54,13 @@ Run the **Build Python 3.12 for Vista SP0** GitHub Actions workflow. It builds
 separate x86 and x64 packages. A ZIP is created only after the runtime hashes
 and PE dependency closure pass.
 
-For a local build, install Visual Studio 2022, the MSVC v140 toolset, Windows
-XP support for C++, and the Windows 7.1A SDK. Then run:
+For a local build, install Visual Studio 2022, Windows XP support for the VS2017
+C++ tools, and the Windows 7.1A SDK. Then run:
 
 ```bat
 git apply v3.12\vista-sp0\patches\0001-pre-kb2533623-dll-loading.patch
 set PATCHDIR=C:\src\cpython-windows-vista-and-7\v3.12\Python-3.12.10\api-ms-win-core-path-HACK
-v3.12\Python-3.12.10\PCbuild\build.bat -p x64 -c Release "/p:PlatformToolset=v140_xp" "/p:WindowsTargetPlatformVersion=7.0"
+v3.12\Python-3.12.10\PCbuild\build.bat -p x64 -c Release "/p:PlatformToolset=v141_xp" "/p:WindowsTargetPlatformVersion=7.0"
 ```
 
 Package and audit it from PowerShell:

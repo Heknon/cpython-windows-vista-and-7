@@ -135,7 +135,7 @@ Write-Host "Selected reviewed UCRT payload from $($ucrtDirectory.FullName)."
 $visualStudioRoot = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio"
 $vc140Runtimes = Get-ChildItem $visualStudioRoot -Filter "vcruntime140.dll" -File -Recurse |
     Where-Object {
-        $_.FullName -match "Microsoft\.VC140\.CRT" -and
+        $_.FullName -match "Microsoft\.VC141\.CRT" -and
         $_.FullName -match "\\$sdkArch\\"
     } |
     Sort-Object FullName
@@ -144,10 +144,14 @@ $vc140Runtime = $vc140Runtimes | Where-Object {
 } | Select-Object -First 1
 
 if (!$vc140Runtime) {
-    $vc140Runtime = Get-Vc140RuntimeFromRedist -Architecture $sdkArch
+    Write-Host "VC141 runtime candidates for $sdkArch:"
+    $vc140Runtimes | ForEach-Object {
+        $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        Write-Host "  $($_.VersionInfo.FileVersion) $hash $($_.FullName)"
+    }
 }
 if (!$vc140Runtime -or !(Test-ExpectedHash $vc140Runtime.FullName $expectedHashes["vcruntime140.dll"])) {
-    throw "Could not locate the reviewed $sdkArch Microsoft.VC140.CRT runtime."
+    throw "Could not locate the reviewed $sdkArch Microsoft.VC141.CRT runtime. Pin a reviewed XP-compatible candidate; do not downgrade it to VC140."
 }
 $vc140VersionMatch = [regex]::Match($vc140Runtime.VersionInfo.FileVersion, "^\d+\.\d+\.\d+\.\d+")
 if (!$vc140VersionMatch.Success) {

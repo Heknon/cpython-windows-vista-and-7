@@ -31,7 +31,7 @@ jobs:
       - name: Configure MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Install Vista-compatible v140_xp toolset
+      - name: Install Vista-compatible v141_xp toolset
         shell: pwsh
         run: ./v3.12/vista-sp0/Install-V140Toolset.ps1
 
@@ -49,7 +49,7 @@ jobs:
           v3.12\Python-3.12.10\PCbuild\build.bat
           -p ${{ matrix.platform }}
           -c Release
-          "/p:PlatformToolset=v140_xp"
+          "/p:PlatformToolset=v141_xp"
           "/p:WindowsTargetPlatformVersion=7.0"
 
       - name: Create and audit app-local embeddable package
