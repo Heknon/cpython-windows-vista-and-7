@@ -41,6 +41,21 @@ jobs:
           git apply --check ./v3.12/vista-sp0/patches/0001-pre-kb2533623-dll-loading.patch
           git apply ./v3.12/vista-sp0/patches/0001-pre-kb2533623-dll-loading.patch
 
+      - name: Create legacy SDK import library
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vswhere -latest -products * -property installationPath
+          $lib = Get-ChildItem $installPath -Filter "lib.exe" -File -Recurse |
+            Where-Object { $_.FullName -match "Hostx64\\x64" } |
+            Select-Object -First 1
+          if (!$lib) { throw "lib.exe was not found." }
+          $machine = if ("${{ matrix.platform }}" -eq "Win32") { "X86" } else { "X64" }
+          $compatLib = "${{ runner.temp }}\vista-compat-lib-${{ matrix.package_arch }}"
+          New-Item -ItemType Directory -Force -Path $compatLib | Out-Null
+          & $lib.FullName /nologo "/def:${{ github.workspace }}\v3.12\vista-sp0\pathcch.def" "/machine:$machine" "/out:$compatLib\pathcch.lib"
+          if ($LASTEXITCODE -ne 0) { throw "Creating pathcch.lib failed." }
+
       - name: Build CPython
         shell: cmd
         env:
@@ -51,6 +66,7 @@ jobs:
           -c Release
           "/p:PlatformToolset=v141_xp"
           "/p:WindowsTargetPlatformVersion=7.0"
+          "/p:VistaCompatLibDir=${{ runner.temp }}\vista-compat-lib-${{ matrix.package_arch }}"
 
       - name: Create and audit app-local embeddable package
         shell: pwsh

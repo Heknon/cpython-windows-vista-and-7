@@ -41,12 +41,59 @@ index 1576e44..5d81b5d 100644
 @@ -39,7 +39,7 @@
    <ItemDefinitionGroup>
      <ClCompile>
-       <AdditionalIncludeDirectories>$(PySourcePath)Include;$(PySourcePath)Include\internal;$(PySourcePath)PC;$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+-      <AdditionalIncludeDirectories>$(PySourcePath)Include;$(PySourcePath)Include\internal;$(PySourcePath)PC;$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
 -      <PreprocessorDefinitions>WIN32;$(_Py3NamePreprocessorDefinition);$(_PlatformPreprocessorDefinition)$(_DebugPreprocessorDefinition)$(_PydPreprocessorDefinition)%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <AdditionalIncludeDirectories>$(PySourcePath)..\vista-sp0\include;$(PySourcePath)Include;$(PySourcePath)Include\internal;$(PySourcePath)PC;$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
 +      <PreprocessorDefinitions>PY_VISTA_LEGACY_SDK;WINVER=0x0600;_WIN32_WINNT=0x0600;NTDDI_VERSION=NTDDI_VISTA;WIN32;$(_Py3NamePreprocessorDefinition);$(_PlatformPreprocessorDefinition)$(_DebugPreprocessorDefinition)$(_PydPreprocessorDefinition)%(PreprocessorDefinitions)</PreprocessorDefinitions>
  
        <Optimization>MaxSpeed</Optimization>
        <IntrinsicFunctions>true</IntrinsicFunctions>
+@@ -69,7 +69,7 @@
+       <FloatingPointModel>Strict</FloatingPointModel>
+     </ClCompile>
+     <Link>
+-      <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
++      <AdditionalLibraryDirectories>$(VistaCompatLibDir);$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+       <GenerateDebugInformation>true</GenerateDebugInformation>
+       <ProgramDatabaseFile>$(OutDir)$(TargetName).pdb</ProgramDatabaseFile>
+       <SubSystem>Windows</SubSystem>
+diff --git a/v3.12/Python-3.12.10/Include/internal/pycore_fileutils_windows.h b/v3.12/Python-3.12.10/Include/internal/pycore_fileutils_windows.h
+index e82e740..5882ea9 100644
+--- a/v3.12/Python-3.12.10/Include/internal/pycore_fileutils_windows.h
++++ b/v3.12/Python-3.12.10/Include/internal/pycore_fileutils_windows.h
+@@ -8,6 +8,10 @@ extern "C" {
+ 
+ #ifdef MS_WINDOWS
+ 
++#ifdef PY_VISTA_LEGACY_SDK
++#  include <pathcch.h>
++#endif
++
+ #if !defined(NTDDI_WIN10_NI) || !(NTDDI_VERSION >= NTDDI_WIN10_NI)
+ typedef struct _FILE_STAT_BASIC_INFORMATION {
+     LARGE_INTEGER FileId;
+diff --git a/v3.12/Python-3.12.10/Modules/socketmodule.h b/v3.12/Python-3.12.10/Modules/socketmodule.h
+index a84f4a1..5bd467a 100644
+--- a/v3.12/Python-3.12.10/Modules/socketmodule.h
++++ b/v3.12/Python-3.12.10/Modules/socketmodule.h
+@@ -89,6 +89,9 @@ typedef int socklen_t;
+ typedef int socklen_t;
+ # endif /* IPPROTO_IPV6 */
+ 
++# ifdef PY_VISTA_LEGACY_SDK
++#  undef AF_HYPERV
++# else
+ /* Remove ifdef once Py_WINVER >= 0x0604
+  * socket.h only defines AF_HYPERV if _WIN32_WINNT is at that level or higher
+  * so for now it's just manually defined.
+@@ -97,6 +100,7 @@ typedef int socklen_t;
+ #  define AF_HYPERV 34
+ # endif
+ # include <hvsocket.h>
++# endif /* PY_VISTA_LEGACY_SDK */
+ #endif /* MS_WINDOWS */
+ 
+ #ifdef HAVE_SYS_UN_H
 diff --git a/v3.12/Python-3.12.10/Modules/posixmodule.c b/v3.12/Python-3.12.10/Modules/posixmodule.c
 index 97914ad..afb6b74 100644
 --- a/v3.12/Python-3.12.10/Modules/posixmodule.c
@@ -123,9 +170,10 @@ diff --git a/v3.12/Python-3.12.10/Python/dynload_win.c b/v3.12/Python-3.12.10/Py
 index acab05e..5c18ece 100644
 --- a/v3.12/Python-3.12.10/Python/dynload_win.c
 +++ b/v3.12/Python-3.12.10/Python/dynload_win.c
-@@ -14,6 +14,28 @@
+@@ -14,6 +14,29 @@
  #include "patchlevel.h"
  #include <windows.h>
++#include <pathcch.h>
  
 +/*
 + * LOAD_LIBRARY_SEARCH_* flags were added to Vista and Windows 7 by
