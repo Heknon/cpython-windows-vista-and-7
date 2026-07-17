@@ -37,54 +37,6 @@ function Test-ExpectedHash {
     return $actualHash -eq $ExpectedHash
 }
 
-function Get-Vc140RuntimeFromRedist {
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Architecture
-    )
-
-    $redistRoot = Join-Path $env:RUNNER_TEMP "vc140-redist-$Architecture"
-    $redistExe = Join-Path $redistRoot "vc_redist.$Architecture.exe"
-    $redistLayout = Join-Path $redistRoot "layout"
-    $redistExtract = Join-Path $redistRoot "extract"
-    $redistUrl = "https://download.microsoft.com/download/6/A/A/6AA4EDFF-645B-48C5-81CC-ED5963AEAD48/vc_redist.$Architecture.exe"
-
-    if (Test-Path $redistRoot) {
-        Remove-Item -Recurse -Force $redistRoot
-    }
-    New-Item -ItemType Directory -Force -Path $redistRoot | Out-Null
-
-    Write-Host "Downloading the Microsoft Visual C++ 2015 Update 3 $Architecture redistributable."
-    Invoke-WebRequest -Uri $redistUrl -OutFile $redistExe
-    $signature = Get-AuthenticodeSignature $redistExe
-    if ($signature.Status -ne "Valid" -or $signature.SignerCertificate.Subject -notmatch "Microsoft") {
-        throw "The VC140 redistributable does not have a valid Microsoft signature."
-    }
-
-    $dark = (Get-Command "dark.exe" -ErrorAction Stop).Source
-    & $dark -nologo -x $redistLayout $redistExe
-    if ($LASTEXITCODE -ne 0) {
-        throw "Extracting the VC140 redistributable bundle failed with exit code $LASTEXITCODE."
-    }
-
-    $minimumMsi = Get-ChildItem $redistLayout -Filter "vc_runtimeMinimum_$Architecture.msi" `
-        -File -Recurse | Select-Object -First 1
-    if (!$minimumMsi) {
-        throw "The VC140 $Architecture minimum-runtime MSI was not found in the redistributable layout."
-    }
-
-    New-Item -ItemType Directory -Force -Path $redistExtract | Out-Null
-    $msiProcess = Start-Process -FilePath "msiexec.exe" -ArgumentList @(
-        "/a", "`"$($minimumMsi.FullName)`"", "/qn", "TARGETDIR=`"$redistExtract`""
-    ) -Wait -PassThru
-    if ($msiProcess.ExitCode -notin @(0, 3010)) {
-        throw "Extracting the VC140 minimum-runtime MSI failed with exit code $($msiProcess.ExitCode)."
-    }
-
-    return Get-ChildItem $redistExtract -Filter "vcruntime140.dll" -File -Recurse |
-        Select-Object -First 1
-}
-
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 if (Test-Path $packageDirectory) {
     Remove-Item -Recurse -Force $packageDirectory
@@ -130,38 +82,47 @@ foreach ($fileName in $ucrtFiles) {
 }
 Write-Host "Selected reviewed UCRT payload from $($ucrtDirectory.FullName)."
 
-# The current VC runtime has a Windows 7 floor.  Locate the runtime installed
-# with the v140 toolset and replace the copy selected by the normal build.
+# The current VC runtime has a Windows 7 floor. Locate the runtime installed
+# with the v141 toolset and replace the copy selected by the normal build.
 $visualStudioRoot = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio"
-$vc140Runtimes = Get-ChildItem $visualStudioRoot -Filter "vcruntime140.dll" -File -Recurse |
+$v141RedistRoot = if ($env:V141_REDIST_ROOT) { $env:V141_REDIST_ROOT } else { $visualStudioRoot }
+$v141Runtimes = Get-ChildItem $v141RedistRoot -Filter "vcruntime140.dll" -File -Recurse |
     Where-Object {
         $_.FullName -match "Microsoft\.VC141\.CRT" -and
         $_.FullName -match "\\$sdkArch\\"
     } |
     Sort-Object FullName
-$vc140Runtime = $vc140Runtimes | Where-Object {
+$v141Runtime = $v141Runtimes | Where-Object {
     Test-ExpectedHash $_.FullName $expectedHashes["vcruntime140.dll"]
 } | Select-Object -First 1
 
-if (!$vc140Runtime) {
+if (!$v141Runtime) {
     Write-Host "VC141 runtime candidates for ${sdkArch}:"
-    $vc140Runtimes | ForEach-Object {
+    $v141Runtimes | ForEach-Object {
         $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
         Write-Host "  $($_.VersionInfo.FileVersion) $hash $($_.FullName)"
     }
 }
-if (!$vc140Runtime -or !(Test-ExpectedHash $vc140Runtime.FullName $expectedHashes["vcruntime140.dll"])) {
+if (!$v141Runtime -or !(Test-ExpectedHash $v141Runtime.FullName $expectedHashes["vcruntime140.dll"])) {
     throw "Could not locate the reviewed $sdkArch Microsoft.VC141.CRT runtime. Pin a reviewed XP-compatible candidate; do not downgrade it to VC140."
 }
-$vc140VersionMatch = [regex]::Match($vc140Runtime.VersionInfo.FileVersion, "^\d+\.\d+\.\d+\.\d+")
-if (!$vc140VersionMatch.Success) {
-    throw "Could not parse the VC140 runtime version at $($vc140Runtime.FullName)."
+$v141VersionMatch = [regex]::Match($v141Runtime.VersionInfo.FileVersion, "^\d+\.\d+\.\d+\.\d+")
+if (!$v141VersionMatch.Success) {
+    throw "Could not parse the VC141 runtime version at $($v141Runtime.FullName)."
 }
-$vc140Version = [Version]$vc140VersionMatch.Value
-if ($vc140Version.Major -ne 14 -or $vc140Version.Minor -lt 10 -or $vc140Version.Minor -ge 20) {
-    throw "Expected a 14.1x VC141 runtime, found $vc140Version at $($vc140Runtime.FullName)."
+$v141Version = [Version]$v141VersionMatch.Value
+if ($v141Version.Major -ne 14 -or $v141Version.Minor -lt 10 -or $v141Version.Minor -ge 20) {
+    throw "Expected a 14.1x VC141 runtime, found $v141Version at $($v141Runtime.FullName)."
 }
-Copy-Item $vc140Runtime.FullName $packageDirectory -Force
+Copy-Item $v141Runtime.FullName $packageDirectory -Force
+
+# vcruntime140_1.dll was introduced after VC141. The embeddable-layout helper
+# may copy the runner's current runtime, so remove that unrelated DLL. The PE
+# dependency audit below will fail if any packaged binary actually requires it.
+$newerRuntime = Join-Path $packageDirectory "vcruntime140_1.dll"
+if (Test-Path $newerRuntime) {
+    Remove-Item -Force $newerRuntime
+}
 
 foreach ($fileName in $expectedHashes.Keys) {
     $path = Join-Path $packageDirectory $fileName

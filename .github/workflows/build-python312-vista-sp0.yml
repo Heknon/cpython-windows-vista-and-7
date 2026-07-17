@@ -71,6 +71,7 @@ jobs:
           -p ${{ matrix.platform }}
           -c Release
           "/p:PlatformToolset=v141_xp"
+          "/p:VCToolsVersion=%V141_TOOLS_VERSION%"
           "/p:WindowsTargetPlatformVersion=7.0"
           "/p:VistaCompatLibDir=${{ runner.temp }}\vista-compat-lib"
           "/p:VistaEmbedOnly=true"

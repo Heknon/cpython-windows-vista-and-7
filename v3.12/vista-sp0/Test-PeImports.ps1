@@ -45,6 +45,24 @@ $dependencyReport = New-Object System.Collections.Generic.List[object]
 $binaries = Get-ChildItem $PackageDirectory -File -Recurse |
     Where-Object { $_.Extension -in @(".dll", ".exe", ".pyd") }
 
+$pythonDll = Get-ChildItem $PackageDirectory -Filter "python3*.dll" -File |
+    Where-Object { $_.Name -ne "python3.dll" } |
+    Select-Object -First 1
+if (!$pythonDll) {
+    $failures.Add("the versioned Python runtime DLL is missing")
+} else {
+    $pythonHeaders = & $dumpbin.FullName /nologo /headers $pythonDll.FullName 2>&1 | Out-String
+    $linker = [regex]::Match($pythonHeaders, "(?m)^\s+([0-9]+\.[0-9]+) linker version\s*$")
+    if (!$linker.Success) {
+        $failures.Add("could not read the linker version for $($pythonDll.Name)")
+    } elseif ([Version]$linker.Groups[1].Value -lt [Version]"14.10" -or
+              [Version]$linker.Groups[1].Value -ge [Version]"14.20") {
+        $failures.Add(
+            "$($pythonDll.Name) was linked by $($linker.Groups[1].Value), not the required VC141 14.1x toolset"
+        )
+    }
+}
+
 foreach ($binary in $binaries) {
     $imports = & $dumpbin.FullName /nologo /imports $binary.FullName 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0) {

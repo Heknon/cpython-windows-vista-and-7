@@ -23,7 +23,7 @@ architecture.
 - The extension-module loader first uses CPython's restricted modern search
   flags. If and only if Windows returns `ERROR_INVALID_PARAMETER`, it retries
   the absolute module path with `LOAD_WITH_ALTERED_SEARCH_PATH`.
-- The app-local UCRT and VC140 runtime payloads are selected by exact SHA-256
+- The app-local UCRT and VC141 runtime payloads are selected by exact SHA-256
   digests in `RuntimeHashes.psd1`; runner directory ordering cannot silently
   change the shipped runtime.
 - The PE audit checks the dependency closure, PE subsystem version, and known
