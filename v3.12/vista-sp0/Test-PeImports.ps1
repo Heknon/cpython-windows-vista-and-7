@@ -71,21 +71,34 @@ foreach ($binary in $binaries) {
         continue
     }
 
-    $dependencies = @(
+    $importedDependencies = @(
         [regex]::Matches($imports, "(?m)^\s+([A-Za-z0-9_.-]+\.dll)\s*$") |
             ForEach-Object { $_.Groups[1].Value.ToUpperInvariant() } |
             Sort-Object -Unique
     )
+
+    $exports = & $dumpbin.FullName /nologo /exports $binary.FullName 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        $failures.Add("dumpbin could not inspect exports from $($binary.Name)")
+        continue
+    }
+    $forwarderDependencies = @(
+        [regex]::Matches($exports, "(?m)=\s+([A-Za-z0-9_-]+)\.[^\s]+") |
+            ForEach-Object { ($_.Groups[1].Value + ".DLL").ToUpperInvariant() } |
+            Sort-Object -Unique
+    )
+    $dependencies = @($importedDependencies + $forwarderDependencies | Sort-Object -Unique)
     $dependencyReport.Add([ordered]@{
         binary = $binary.FullName.Substring($PackageDirectory.Length + 1).Replace("\\", "/")
-        imports = $dependencies
+        imports = $importedDependencies
+        forwarders = $forwarderDependencies
     })
 
     foreach ($dependency in $dependencies) {
         if (!$packagedDlls.ContainsKey($dependency) -and $dependency -notin $allowedSystemDlls) {
             [void]$missingDependencies.Add($dependency)
             $failures.Add(
-                "$($binary.Name) imports $dependency, which is neither packaged nor allowed on Vista RTM"
+                "$($binary.Name) depends on $dependency, which is neither packaged nor allowed on Vista RTM"
             )
         }
     }
