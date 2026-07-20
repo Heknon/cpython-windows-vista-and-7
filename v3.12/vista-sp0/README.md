@@ -57,7 +57,11 @@ architecture.
   still runs first against the optimized embeddable ZIP that is actually
   shipped. Only upstream cases that require `PYTHON*` environment variables are
   excluded, because a `._pth` embeddable configuration intentionally ignores
-  those variables.
+  those variables. Dev Drive assertions are also excluded because Dev Drives
+  are a post-Vista feature intentionally unavailable in this target. A separate
+  interpreter under `validation-runner` exposes the source library and
+  test-only native modules to regression subprocesses without changing the
+  shipping `python.exe` path configuration.
 
 For an assembled application, list any application-specific modules that must
 import successfully in `RTM-SMOKE-MODULES.txt`, one dotted module name per line.

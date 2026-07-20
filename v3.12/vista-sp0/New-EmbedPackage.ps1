@@ -143,6 +143,40 @@ $validationLib = Join-Path $packageDirectory "validation-lib"
 New-Item -ItemType Directory -Force -Path $validationLib | Out-Null
 Copy-Item (Join-Path $sourceRoot "Lib\*") $validationLib -Recurse -Force
 
+# The embeddable preset deliberately omits CPython's test-only native modules.
+# Keep them under validation-lib and use a separate executable/path file so
+# regression subprocesses see the validation tree without changing the normal
+# shipping interpreter's optimized python312.zip behavior.
+$requiredTestExtensions = @(
+    "_ctypes_test.pyd"
+    "_testcapi.pyd"
+    "_testinternalcapi.pyd"
+    "_testmultiphase.pyd"
+)
+$testExtensions = Get-ChildItem $buildDirectory -File | Where-Object {
+    $_.Name -like "_test*.pyd" -or
+    $_.Name -eq "_ctypes_test.pyd" -or
+    $_.Name -like "xxlimited*.pyd" -or
+    $_.Name -eq "xxsubtype.pyd"
+}
+foreach ($required in $requiredTestExtensions) {
+    if ($required -notin $testExtensions.Name) {
+        throw "Required CPython regression extension is missing: $required"
+    }
+}
+$testExtensions | Copy-Item -Destination $validationLib -Force
+
+$validationRunner = Join-Path $packageDirectory "validation-runner"
+New-Item -ItemType Directory -Force -Path $validationRunner | Out-Null
+Copy-Item (Join-Path $packageDirectory "python.exe") $validationRunner -Force
+Get-ChildItem $packageDirectory -Filter "*.dll" -File | `
+    Copy-Item -Destination $validationRunner -Force
+@(
+    "..\validation-lib"
+    "..\python312.zip"
+    ".."
+) | Set-Content (Join-Path $validationRunner "python312._pth") -Encoding Ascii
+
 & (Join-Path $PSScriptRoot "Test-PeImports.ps1") -PackageDirectory $packageDirectory
 if ($LASTEXITCODE -ne 0) {
     throw "PE dependency-closure audit failed with exit code $LASTEXITCODE."

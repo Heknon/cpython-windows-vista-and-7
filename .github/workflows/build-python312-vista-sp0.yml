@@ -79,7 +79,7 @@ jobs:
           "/p:WindowsTargetPlatformVersion=7.0"
           "/p:VistaCompatLibDir=${{ runner.temp }}\vista-compat-lib"
           "/p:VistaEmbedOnly=true"
-          "/p:IncludeTests=false"
+          "/p:IncludeTests=true"
 
       - name: Create and audit app-local embeddable package
         shell: pwsh
@@ -97,7 +97,7 @@ jobs:
       - name: Run compatibility regression groups on the build host
         shell: pwsh
         run: >-
-          & "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/python.exe"
+          & "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/validation-runner/python.exe"
           "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/rtm_regression.py"
 
       - name: Upload embeddable package
