@@ -50,9 +50,12 @@ architecture.
   mapping, clocks, threads, subprocesses, TCP loopback, and `asyncio`. If
   pywin32 is present, its real `.pth` bootstrap and core compiled modules are
   imported in fresh processes in both dependency-first orders.
-- The package carries CPython's regression tests and runs the Windows-facing
-  `asyncio`, `_ctypes`, import, multiprocessing, path, filesystem, socket, SSL,
-  subprocess, time, and registry groups on the host and again on the RTM guest.
+- The package carries an unoptimized validation copy of CPython's standard
+  library and runs the Windows-facing `asyncio`, `_ctypes`, import,
+  multiprocessing, path, filesystem, socket, SSL, subprocess, time, and
+  registry groups on the host and again on the RTM guest. The normal smoke test
+  still runs first against the optimized embeddable ZIP that is actually
+  shipped.
 
 For an assembled application, list any application-specific modules that must
 import successfully in `RTM-SMOKE-MODULES.txt`, one dotted module name per line.
