@@ -58,10 +58,13 @@ architecture.
   shipped. Only upstream cases that require `PYTHON*` environment variables are
   excluded, because a `._pth` embeddable configuration intentionally ignores
   those variables. Dev Drive assertions are also excluded because Dev Drives
-  are a post-Vista feature intentionally unavailable in this target. A separate
-  interpreter under `validation-runner` exposes the source library and
-  test-only native modules to regression subprocesses without changing the
-  shipping `python.exe` path configuration.
+  are a post-Vista feature intentionally unavailable in this target. Two exact
+  assertions that require normal-install path/flag behavior are excluded: an
+  implicit current-directory import and propagation of `no_user_site` across
+  an embeddable subprocess transition. A separate interpreter and `Lib` tree
+  under `validation-runner` expose the source library and test-only native
+  modules to regression subprocesses without changing the shipping
+  `python.exe` path configuration.
 
 For an assembled application, list any application-specific modules that must
 import successfully in `RTM-SMOKE-MODULES.txt`, one dotted module name per line.

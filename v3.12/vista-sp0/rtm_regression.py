@@ -6,7 +6,7 @@ import sys
 
 
 root = os.path.dirname(os.path.abspath(__file__))
-validation_lib = os.path.join(root, "validation-lib")
+validation_lib = os.path.join(root, "validation-runner", "Lib")
 if not os.path.isdir(os.path.join(validation_lib, "test")):
     raise AssertionError("the packaged CPython regression suite is missing")
 normalized_validation_lib = os.path.normcase(os.path.abspath(validation_lib))
@@ -56,6 +56,8 @@ def main():
             match_tests=[
                 ("*test_env_var_debug", False),
                 ("*test_isdevdrive", False),
+                ("*test_unencodable_filename", False),
+                ("*TestFlags.test_flags", False),
             ],
         )
 

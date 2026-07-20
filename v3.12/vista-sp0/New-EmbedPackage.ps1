@@ -139,14 +139,23 @@ Copy-Item (Join-Path $PSScriptRoot "guest_validate.py") $packageDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot "guest_validate.cmd") $packageDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot "rtm_preflight.py") $packageDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot "rtm_regression.py") $packageDirectory -Force
-$validationLib = Join-Path $packageDirectory "validation-lib"
+
+# A separate executable and versioned path file expose an unpacked source
+# library to regression subprocesses without changing the normal shipping
+# interpreter's optimized python312.zip behavior.  Keep the library in the
+# conventional location beside this executable so sys._stdlib_dir and frozen
+# module source metadata describe the same tree that the tests import.
+$validationRunner = Join-Path $packageDirectory "validation-runner"
+New-Item -ItemType Directory -Force -Path $validationRunner | Out-Null
+Copy-Item (Join-Path $packageDirectory "python.exe") $validationRunner -Force
+Get-ChildItem $packageDirectory -Filter "*.dll" -File | `
+    Copy-Item -Destination $validationRunner -Force
+$validationLib = Join-Path $validationRunner "Lib"
 New-Item -ItemType Directory -Force -Path $validationLib | Out-Null
 Copy-Item (Join-Path $sourceRoot "Lib\*") $validationLib -Recurse -Force
 
 # The embeddable preset deliberately omits CPython's test-only native modules.
-# Keep them under validation-lib and use a separate executable/path file so
-# regression subprocesses see the validation tree without changing the normal
-# shipping interpreter's optimized python312.zip behavior.
+# Keep them with the unpacked validation library.
 $requiredTestExtensions = @(
     "_ctypes_test.pyd"
     "_testcapi.pyd"
@@ -166,13 +175,8 @@ foreach ($required in $requiredTestExtensions) {
 }
 $testExtensions | Copy-Item -Destination $validationLib -Force
 
-$validationRunner = Join-Path $packageDirectory "validation-runner"
-New-Item -ItemType Directory -Force -Path $validationRunner | Out-Null
-Copy-Item (Join-Path $packageDirectory "python.exe") $validationRunner -Force
-Get-ChildItem $packageDirectory -Filter "*.dll" -File | `
-    Copy-Item -Destination $validationRunner -Force
 @(
-    "..\validation-lib"
+    "Lib"
     "..\python312.zip"
     ".."
 ) | Set-Content (Join-Path $validationRunner "python312._pth") -Encoding Ascii
