@@ -55,7 +55,9 @@ architecture.
   multiprocessing, path, filesystem, socket, SSL, subprocess, time, and
   registry groups on the host and again on the RTM guest. The normal smoke test
   still runs first against the optimized embeddable ZIP that is actually
-  shipped.
+  shipped. Only upstream cases that require `PYTHON*` environment variables are
+  excluded, because a `._pth` embeddable configuration intentionally ignores
+  those variables.
 
 For an assembled application, list any application-specific modules that must
 import successfully in `RTM-SMOKE-MODULES.txt`, one dotted module name per line.

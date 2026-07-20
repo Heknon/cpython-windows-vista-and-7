@@ -38,11 +38,21 @@ def main():
         if test_name not in TESTS:
             raise AssertionError(f"unknown RTM regression group: {test_name}")
         sys.argv[:] = [sys.argv[0]]
-        run_regrtest(tests=[test_name], _add_python_opts=False, timeout=300)
+        # An embeddable ._pth configuration intentionally ignores PYTHON*
+        # environment variables.  The normal and -X dev debug paths remain
+        # covered, but upstream's environment-variable cases do not describe
+        # this distribution's supported semantics.
+        run_regrtest(
+            tests=[test_name],
+            _add_python_opts=False,
+            timeout=300,
+            match_tests=[("*test_env_var_debug", False)],
+        )
 
     if len(sys.argv) != 1:
         raise AssertionError(f"unexpected RTM regression arguments: {sys.argv[1:]!r}")
 
+    failures = []
     for test_name in TESTS:
         print(f"RTM regression starting: {test_name}", flush=True)
         try:
@@ -51,15 +61,17 @@ def main():
                 timeout=420,
             )
         except subprocess.TimeoutExpired:
-            raise AssertionError(
-                f"RTM regression group exceeded seven minutes: {test_name}"
-            ) from None
+            failures.append(f"{test_name} exceeded seven minutes")
+            print(f"RTM regression timed out: {test_name}", flush=True)
+            continue
         if completed.returncode:
-            raise AssertionError(
-                f"RTM regression group failed: {test_name} "
-                f"(exit {completed.returncode})"
-            )
+            failures.append(f"{test_name} exited {completed.returncode}")
+            print(f"RTM regression failed: {test_name}", flush=True)
+            continue
         print(f"RTM regression passed: {test_name}", flush=True)
+
+    if failures:
+        raise AssertionError("RTM regression failures: " + ", ".join(failures))
 
 
 if __name__ == "__main__":
