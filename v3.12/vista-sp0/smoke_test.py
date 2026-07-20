@@ -102,14 +102,80 @@ kernel32_by_path = ctypes.WinDLL(kernel32_path)
 if kernel32_by_path.GetCurrentProcessId() != os.getpid():
     raise AssertionError("ctypes absolute-path Win32 call failed")
 
-try:
-    dll_directory = os.add_dll_directory(str(package_root))
-except NotImplementedError:
-    windows = sys.getwindowsversion()
-    if (windows.major, windows.minor, windows.build) not in ((6, 0, 6000), (6, 1, 7600)):
-        raise
-else:
-    dll_directory.close()
+compatibility_dll = package_root / "api-ms-win-core-path-l1-1-0.dll"
+if not compatibility_dll.is_file():
+    raise AssertionError("the DLL-directory probe dependency is missing")
+
+# Verify that multiple DLL directories work together, may be removed out of
+# insertion order, and stop participating in searches after close(). This
+# exercises the native API on updated Windows and the PATH-backed compatibility
+# implementation on Vista/Windows 7 RTM.
+with tempfile.TemporaryDirectory() as first_directory, \
+        tempfile.TemporaryDirectory() as second_directory:
+    first_name = "python_legacy_dll_directory_first.dll"
+    second_name = "python_legacy_dll_directory_second.dll"
+    remaining_name = "python_legacy_dll_directory_remaining.dll"
+    removed_name = "python_legacy_dll_directory_removed.dll"
+    shutil.copy2(compatibility_dll, Path(first_directory, first_name))
+    shutil.copy2(compatibility_dll, Path(second_directory, second_name))
+    shutil.copy2(compatibility_dll, Path(second_directory, remaining_name))
+    shutil.copy2(compatibility_dll, Path(second_directory, removed_name))
+
+    first_cookie = os.add_dll_directory(first_directory)
+    second_cookie = os.add_dll_directory(second_directory)
+    try:
+        ctypes.WinDLL(first_name)
+        ctypes.WinDLL(second_name)
+        first_cookie.close()
+        first_cookie = None
+        ctypes.WinDLL(remaining_name)
+    finally:
+        if first_cookie is not None:
+            first_cookie.close()
+        second_cookie.close()
+
+    try:
+        ctypes.WinDLL(removed_name)
+    except OSError:
+        pass
+    else:
+        raise AssertionError("a closed DLL directory remained searchable")
+
+# Reproduce the pywin32 startup pattern: a .pth file imports a bootstrap
+# module, which adds a DLL directory and immediately loads a dependency from
+# it. site.py reports .pth exceptions without failing the interpreter, so the
+# child explicitly re-imports the bootstrap and checks its completion marker.
+with tempfile.TemporaryDirectory() as directory:
+    site_directory = Path(directory, "site-packages")
+    dll_directory = Path(directory, "pywin32_system32")
+    site_directory.mkdir()
+    dll_directory.mkdir()
+    probe_name = "python_legacy_pth_dll_directory.dll"
+    shutil.copy2(compatibility_dll, dll_directory / probe_name)
+    Path(site_directory, "legacy_dll_bootstrap.py").write_text(
+        "import ctypes\n"
+        "import os\n"
+        f"os.add_dll_directory({str(dll_directory)!r})\n"
+        f"ctypes.WinDLL({probe_name!r})\n"
+        "completed = True\n",
+        encoding="utf-8",
+    )
+    Path(site_directory, "legacy_dll_bootstrap.pth").write_text(
+        "import legacy_dll_bootstrap\n",
+        encoding="utf-8",
+    )
+    site_script = (
+        "import site; "
+        f"site.addsitedir({str(site_directory)!r}); "
+        "import legacy_dll_bootstrap; "
+        "assert legacy_dll_bootstrap.completed"
+    )
+    subprocess.run(
+        [sys.executable, "-I", "-c", site_script],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
 
 with tempfile.TemporaryFile() as mapped_file:
     mapped_file.write(b"\0" * 4096)

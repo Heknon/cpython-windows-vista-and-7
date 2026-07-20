@@ -216,6 +216,94 @@ index 97914ad..afb6b74 100644
          err = GetLastError();
      }
      Py_END_ALLOW_THREADS
+diff --git a/v3.12/Python-3.12.10/Lib/os.py b/v3.12/Python-3.12.10/Lib/os.py
+index 465742d..ae9b0b5 100644
+--- a/v3.12/Python-3.12.10/Lib/os.py
++++ b/v3.12/Python-3.12.10/Lib/os.py
+@@ -1125,4 +1125,71 @@ class PathLike(abc.ABC):
+ if name == 'nt':
++    # Windows Vista and Windows 7 without KB2533623 do not provide
++    # AddDllDirectory/RemoveDllDirectory.  Keep their directories in a
++    # process-local PATH prefix so the legacy LoadLibraryEx fallbacks used by
++    # extension imports and ctypes can still resolve dependencies.  The GIL
++    # serializes updates to this list.
++    _legacy_dll_directories = []
++    _legacy_dll_path_prefix = None
++
++    def _refresh_legacy_dll_path():
++        global _legacy_dll_path_prefix
++
++        current = environ.get('PATH')
++        if _legacy_dll_path_prefix:
++            if current == _legacy_dll_path_prefix:
++                current = None
++            elif (current is not None and
++                  current.startswith(_legacy_dll_path_prefix + pathsep)):
++                current = current[len(_legacy_dll_path_prefix) + 1:]
++
++        prefix = pathsep.join(
++            directory for _, directory in reversed(_legacy_dll_directories)
++        )
++        if prefix:
++            environ['PATH'] = prefix + (pathsep + current if current else '')
++            _legacy_dll_path_prefix = prefix
++        else:
++            if current is None:
++                environ.pop('PATH', None)
++            else:
++                environ['PATH'] = current
++            _legacy_dll_path_prefix = None
++
++    def _legacy_add_dll_directory(directory):
++        import nt
++
++        directory = fspath(directory)
++        if isinstance(directory, bytes):
++            directory = fsdecode(directory)
++        directory = nt._getfullpathname(directory)
++        if pathsep in directory:
++            raise ValueError(
++                "legacy DLL directory paths cannot contain {!r}".format(pathsep)
++            )
++        if not path.isdir(directory):
++            raise FileNotFoundError(
++                2, "The system cannot find the path specified", directory
++            )
++
++        token = object()
++        _legacy_dll_directories.append((token, directory))
++        _refresh_legacy_dll_path()
++        return _AddedDllDirectory(
++            directory,
++            token,
++            _legacy_remove_dll_directory
++        )
++
++    def _legacy_remove_dll_directory(token):
++        for index, (candidate, _) in enumerate(_legacy_dll_directories):
++            if candidate is token:
++                del _legacy_dll_directories[index]
++                _refresh_legacy_dll_path()
++                return
++        raise TypeError(
++            "Provided cookie was not returned from os.add_dll_directory"
++        )
++
+     class _AddedDllDirectory:
+         def __init__(self, path, cookie, remove_dll_directory):
+             self.path = path
+@@ -1151,7 +1218,10 @@ if name == 'nt':
+         using it in a with statement.
+         """
+         import nt
+-        cookie = nt._add_dll_directory(path)
++        try:
++            cookie = nt._add_dll_directory(path)
++        except NotImplementedError:
++            return _legacy_add_dll_directory(path)
+         return _AddedDllDirectory(
+             path,
+             cookie,
 diff --git a/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c b/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c
 --- a/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c
 +++ b/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c

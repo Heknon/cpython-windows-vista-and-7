@@ -22,6 +22,7 @@ $ctypes = Join-Path $SourceRoot "Modules\_ctypes\callproc.c"
 $dynload = Join-Path $SourceRoot "Python\dynload_win.c"
 $fileutils = Join-Path $SourceRoot "Python\fileutils.c"
 $posix = Join-Path $SourceRoot "Modules\posixmodule.c"
+$osModule = Join-Path $SourceRoot "Lib\os.py"
 
 Require-Pattern $ctypes `
     '(?m)^#define LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR 0x00000100\r?$' `
@@ -50,6 +51,12 @@ Require-Pattern $posix `
 Require-Pattern $posix `
     'GetProcAddress\([\s\S]+"RemoveDllDirectory"\)' `
     "dynamic RemoveDllDirectory resolution"
+Require-Pattern $osModule `
+    'except NotImplementedError:[\s\S]+_legacy_add_dll_directory' `
+    "the pre-KB2533623 os.add_dll_directory fallback"
+Require-Pattern $osModule `
+    '_legacy_dll_directories[\s\S]+environ\[''PATH''\]' `
+    "the legacy multi-directory DLL search path"
 
 $directForbidden = @(
     @{ Pattern = '(?m)\bAddDllDirectory\s*\('; Name = "AddDllDirectory" },

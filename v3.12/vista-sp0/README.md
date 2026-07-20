@@ -20,6 +20,10 @@ architecture.
 - `AddDllDirectory` and `RemoveDllDirectory` are resolved with
   `GetProcAddress`, preventing the Windows loader from rejecting
   `python312.dll` when those KB2533623 exports are absent.
+- When those exports are absent, `os.add_dll_directory()` maintains all active
+  directories in a managed process `PATH` prefix. Its returned objects retain
+  normal `close()` and context-manager behavior, including out-of-order
+  removal, so packages such as pywin32 can bootstrap without special patches.
 - The extension-module loader first uses CPython's restricted modern search
   flags. If and only if Windows returns `ERROR_INVALID_PARAMETER`, it retries
   the absolute module path with `LOAD_WITH_ALTERED_SEARCH_PATH`.
