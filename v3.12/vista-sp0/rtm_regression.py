@@ -31,4 +31,5 @@ TESTS = (
     "test_winreg",
 )
 
-main(tests=TESTS, _add_python_opts=False)
+if __name__ == "__main__":
+    main(tests=TESTS, _add_python_opts=False)
