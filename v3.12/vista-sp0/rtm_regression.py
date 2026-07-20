@@ -47,7 +47,7 @@ def main():
         print(f"RTM regression starting: {test_name}", flush=True)
         try:
             completed = subprocess.run(
-                [sys.executable, "-I", __file__, "--single", test_name],
+                [sys.executable, __file__, "--single", test_name],
                 timeout=420,
             )
         except subprocess.TimeoutExpired:

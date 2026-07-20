@@ -56,7 +56,7 @@ import smoke_test  # noqa: E402,F401
 
 regression = os.path.join(root, "rtm_regression.py")
 completed = subprocess.run(
-    [sys.executable, "-I", regression],
+    [sys.executable, regression],
     stdout=subprocess.PIPE,
     stderr=subprocess.STDOUT,
     text=True,

@@ -98,7 +98,6 @@ jobs:
         shell: pwsh
         run: >-
           & "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/python.exe"
-          -I
           "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/rtm_regression.py"
 
       - name: Upload embeddable package
