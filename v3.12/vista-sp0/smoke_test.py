@@ -129,20 +129,23 @@ import nt
 import os
 import sys
 
-first_directory, second_directory = sys.argv[1:3]
-first_name, second_name, remaining_name, removed_name = sys.argv[3:]
+force_legacy = sys.argv[1] == "legacy"
+first_directory, second_directory = sys.argv[2:4]
+first_name, second_name, remaining_name, removed_name = sys.argv[4:]
 original_add_dll_directory = nt._add_dll_directory
 original_path = os.environ.get("PATH")
 
 def force_legacy_add_dll_directory(path):
     raise NotImplementedError("forced RTM compatibility path")
 
-nt._add_dll_directory = force_legacy_add_dll_directory
+if force_legacy:
+    nt._add_dll_directory = force_legacy_add_dll_directory
 first_cookie = os.add_dll_directory(first_directory)
 second_cookie = os.add_dll_directory(second_directory)
 try:
-    ctypes.WinDLL(first_name)
-    ctypes.WinDLL(second_name)
+    if not force_legacy:
+        ctypes.WinDLL(first_name)
+        ctypes.WinDLL(second_name)
     external_before = os.path.join(os.path.dirname(first_directory), "external-before")
     external_after = os.path.join(os.path.dirname(first_directory), "external-after")
     os.environ["PATH"] = (
@@ -151,18 +154,20 @@ try:
     )
     first_cookie.close()
     first_cookie = None
-    ctypes.WinDLL(remaining_name)
+    if not force_legacy:
+        ctypes.WinDLL(remaining_name)
 finally:
     if first_cookie is not None:
         first_cookie.close()
     second_cookie.close()
 
-try:
-    ctypes.WinDLL(removed_name)
-except OSError:
-    pass
-else:
-    raise AssertionError("a closed DLL directory remained searchable")
+if not force_legacy:
+    try:
+        ctypes.WinDLL(removed_name)
+    except OSError:
+        pass
+    else:
+        raise AssertionError("a closed DLL directory remained searchable")
 
 expected_path = external_before
 if original_path:
@@ -183,23 +188,31 @@ if original_path is not None:
     os.environ["PATH"] = original_path
 nt._add_dll_directory = original_add_dll_directory
 """
-    subprocess.run(
-        [
-            sys.executable,
-            "-I",
-            "-c",
-            dll_directory_script,
-            first_directory,
-            second_directory,
-            first_name,
-            second_name,
-            remaining_name,
-            removed_name,
-        ],
-        check=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
+    for mode in ("native", "legacy"):
+        completed = subprocess.run(
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                dll_directory_script,
+                mode,
+                first_directory,
+                second_directory,
+                first_name,
+                second_name,
+                remaining_name,
+                removed_name,
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+        if completed.returncode:
+            raise AssertionError(
+                f"{mode} DLL-directory probe failed:\n"
+                f"stdout:\n{completed.stdout}\n"
+                f"stderr:\n{completed.stderr}"
+            )
 
 # Reproduce the pywin32 startup pattern: a .pth file imports a bootstrap
 # module, which adds a DLL directory and immediately loads a dependency from
