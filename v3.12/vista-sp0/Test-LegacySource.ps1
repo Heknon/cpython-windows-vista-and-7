@@ -24,6 +24,12 @@ $fileutils = Join-Path $SourceRoot "Python\fileutils.c"
 $posix = Join-Path $SourceRoot "Modules\posixmodule.c"
 
 Require-Pattern $ctypes `
+    '(?m)^#define LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR 0x00000100\r?$' `
+    "the Windows 7.1A SDK DLL-load-directory flag definition"
+Require-Pattern $ctypes `
+    '(?m)^#define LOAD_LIBRARY_SEARCH_DEFAULT_DIRS 0x00001000\r?$' `
+    "the Windows 7.1A SDK default-directory flag definition"
+Require-Pattern $ctypes `
     'GetProcAddress\(kernel32,\s*"AddDllDirectory"\)' `
     "the pre-KB2533623 _ctypes capability check"
 Require-Pattern $ctypes `

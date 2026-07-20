@@ -219,6 +219,20 @@ index 97914ad..afb6b74 100644
 diff --git a/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c b/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c
 --- a/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c
 +++ b/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c
+@@ -66,5 +66,13 @@
+ #ifdef MS_WIN32
+ #include <windows.h>
++#ifdef PY_VISTA_LEGACY_SDK
++#ifndef LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR
++#define LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR 0x00000100
++#endif
++#ifndef LOAD_LIBRARY_SEARCH_DEFAULT_DIRS
++#define LOAD_LIBRARY_SEARCH_DEFAULT_DIRS 0x00001000
++#endif
++#endif /* PY_VISTA_LEGACY_SDK */
+ #include <tchar.h>
+ #else
+ #include <dlfcn.h>
 @@ -1364,6 +1364,10 @@
      int load_flags = 0;
      HMODULE hMod;
