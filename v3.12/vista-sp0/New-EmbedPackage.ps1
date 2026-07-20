@@ -137,6 +137,7 @@ foreach ($fileName in $expectedHashes.Keys) {
 Copy-Item (Join-Path $PSScriptRoot "smoke_test.py") $packageDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot "guest_validate.py") $packageDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot "guest_validate.cmd") $packageDirectory -Force
+Copy-Item (Join-Path $PSScriptRoot "rtm_preflight.py") $packageDirectory -Force
 
 & (Join-Path $PSScriptRoot "Test-PeImports.ps1") -PackageDirectory $packageDirectory
 if ($LASTEXITCODE -ne 0) {

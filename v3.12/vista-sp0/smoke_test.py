@@ -6,6 +6,8 @@ import hashlib
 import importlib
 import json
 import lzma
+import mmap
+import multiprocessing
 import os
 from pathlib import Path
 import platform
@@ -18,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import xml.etree.ElementTree as element_tree
 
 
@@ -87,8 +90,48 @@ with sqlite3.connect(":memory:") as connection:
         raise AssertionError("SQLite round trip failed")
 
 ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-if ctypes.windll.kernel32.GetCurrentProcessId() != os.getpid():
+kernel32 = ctypes.windll.kernel32
+if kernel32.GetCurrentProcessId() != os.getpid():
     raise AssertionError("ctypes Win32 call failed")
+
+# Exercise both _ctypes default loader modes. A bare DLL name uses
+# LOAD_LIBRARY_SEARCH_DEFAULT_DIRS, while an absolute path also requests
+# LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR. Neither flag exists before KB2533623.
+kernel32_path = os.path.join(os.environ["SystemRoot"], "System32", "kernel32.dll")
+kernel32_by_path = ctypes.WinDLL(kernel32_path)
+if kernel32_by_path.GetCurrentProcessId() != os.getpid():
+    raise AssertionError("ctypes absolute-path Win32 call failed")
+
+try:
+    dll_directory = os.add_dll_directory(str(package_root))
+except NotImplementedError:
+    windows = sys.getwindowsversion()
+    if (windows.major, windows.minor, windows.build) not in ((6, 0, 6000), (6, 1, 7600)):
+        raise
+else:
+    dll_directory.close()
+
+with tempfile.TemporaryFile() as mapped_file:
+    mapped_file.write(b"\0" * 4096)
+    mapped_file.flush()
+    with mmap.mmap(mapped_file.fileno(), 4096) as mapping:
+        mapping[:len(payload)] = payload
+        if mapping[:len(payload)] != payload:
+            raise AssertionError("mmap round trip failed")
+
+started = time.monotonic()
+time.sleep(0.01)
+if time.monotonic() < started:
+    raise AssertionError("monotonic clock moved backwards")
+
+pipe_reader, pipe_writer = multiprocessing.Pipe(duplex=False)
+try:
+    pipe_writer.send_bytes(payload)
+    if pipe_reader.recv_bytes() != payload:
+        raise AssertionError("multiprocessing pipe round trip failed")
+finally:
+    pipe_reader.close()
+    pipe_writer.close()
 
 thread_result = []
 thread = threading.Thread(target=lambda: thread_result.append("ok"))

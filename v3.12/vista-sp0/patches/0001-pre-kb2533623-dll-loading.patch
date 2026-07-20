@@ -216,6 +216,55 @@ index 97914ad..afb6b74 100644
          err = GetLastError();
      }
      Py_END_ALLOW_THREADS
+diff --git a/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c b/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c
+--- a/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c
++++ b/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c
+@@ -1364,6 +1364,10 @@
+     int load_flags = 0;
+     HMODULE hMod;
+     DWORD err;
++#ifdef PY_VISTA_LEGACY_SDK
++    DWORD legacy_flags = 0;
++    BOOL retry_with_legacy_flags = FALSE;
++#endif
+ 
+     if (!PyArg_ParseTuple(args, "U|i:LoadLibrary", &nameobj, &load_flags))
+         return NULL;
+@@ -1382,6 +1386,34 @@
+      */
+     hMod = LoadLibraryExW(name, NULL, (DWORD)load_flags);
+     err = hMod ? 0 : GetLastError();
++#ifdef PY_VISTA_LEGACY_SDK
++    /* LOAD_LIBRARY_SEARCH_* is unavailable before KB2533623.  ctypes uses
++     * these two modes by default, so map only those exact combinations to
++     * their closest RTM equivalents.  Do not hide ERROR_INVALID_PARAMETER
++     * for arbitrary caller-supplied winmode values.
++     */
++    if (err == ERROR_INVALID_PARAMETER) {
++        HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
++        BOOL has_kb2533623 = kernel32 != NULL &&
++            GetProcAddress(kernel32, "AddDllDirectory") != NULL;
++
++        if (!has_kb2533623) {
++            if ((DWORD)load_flags == LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) {
++                retry_with_legacy_flags = TRUE;
++            }
++            else if ((DWORD)load_flags ==
++                     (LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
++                      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR)) {
++                legacy_flags = LOAD_WITH_ALTERED_SEARCH_PATH;
++                retry_with_legacy_flags = TRUE;
++            }
++        }
++    }
++    if (retry_with_legacy_flags) {
++        hMod = LoadLibraryExW(name, NULL, legacy_flags);
++        err = hMod ? 0 : GetLastError();
++    }
++#endif /* PY_VISTA_LEGACY_SDK */
+     Py_END_ALLOW_THREADS
+ 
+     PyMem_Free(name);
 diff --git a/v3.12/Python-3.12.10/Python/dynload_win.c b/v3.12/Python-3.12.10/Python/dynload_win.c
 index acab05e..5c18ece 100644
 --- a/v3.12/Python-3.12.10/Python/dynload_win.c

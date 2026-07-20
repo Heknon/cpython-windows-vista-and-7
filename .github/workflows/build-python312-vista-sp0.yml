@@ -41,6 +41,10 @@ jobs:
           git apply --check ./v3.12/vista-sp0/patches/0001-pre-kb2533623-dll-loading.patch
           git apply ./v3.12/vista-sp0/patches/0001-pre-kb2533623-dll-loading.patch
 
+      - name: Audit legacy DLL-loading paths
+        shell: pwsh
+        run: ./v3.12/vista-sp0/Test-LegacySource.ps1
+
       - name: Create legacy SDK import library
         shell: pwsh
         run: |

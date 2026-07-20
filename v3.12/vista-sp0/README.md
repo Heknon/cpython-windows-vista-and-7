@@ -29,15 +29,22 @@ architecture.
 - The PE audit checks the dependency closure, executable subsystem version,
   and known post-Vista imports. A DLL that is neither packaged nor in the
   Vista RTM system-DLL allowlist fails the build.
+- The source-loader audit rejects new, unreviewed `LoadLibraryEx` call sites
+  and verifies the pre-KB2533623 fallbacks used by both the extension loader
+  and `_ctypes`.
+- Before importing packaged extension modules, the RTM guest preflight parses
+  every packaged PE image and verifies each normal and delay-loaded import
+  against the exports of the actual clean guest's system DLLs. Forwarded
+  exports are resolved recursively.
 - The packaged smoke test imports every `.pyd` in the artifact and exercises
   files, `shutil.copy`, `copy2`, `copytree`, compression, hashing, XML,
-  SQLite, SSL initialization, `ctypes`, threads, subprocesses, TCP loopback,
-  and `asyncio`.
+  SQLite, SSL initialization, both default `ctypes` DLL-loading modes, memory
+  mapping, clocks, threads, subprocesses, TCP loopback, and `asyncio`.
 
-The system-DLL list is not an export-level Vista RTM allowlist. That final
-static check requires an export manifest captured from genuine Vista RTM
-system DLLs. Do not infer export compatibility merely because a DLL name is
-allowed.
+The hosted system-DLL list remains a DLL-name allowlist rather than an RTM
+export manifest. Exact symbol compatibility is therefore decided by the
+packaged on-guest PE preflight against the genuine RTM system DLLs, not inferred
+from a successful build on a modern host.
 
 ## Current status and remaining blocker
 
