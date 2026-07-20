@@ -125,16 +125,30 @@ with tempfile.TemporaryDirectory() as first_directory, \
     # TemporaryDirectory removes the copied DLLs.
     dll_directory_script = """
 import ctypes
+import nt
 import os
 import sys
 
 first_directory, second_directory = sys.argv[1:3]
 first_name, second_name, remaining_name, removed_name = sys.argv[3:]
+original_add_dll_directory = nt._add_dll_directory
+original_path = os.environ.get("PATH")
+
+def force_legacy_add_dll_directory(path):
+    raise NotImplementedError("forced RTM compatibility path")
+
+nt._add_dll_directory = force_legacy_add_dll_directory
 first_cookie = os.add_dll_directory(first_directory)
 second_cookie = os.add_dll_directory(second_directory)
 try:
     ctypes.WinDLL(first_name)
     ctypes.WinDLL(second_name)
+    external_before = os.path.join(os.path.dirname(first_directory), "external-before")
+    external_after = os.path.join(os.path.dirname(first_directory), "external-after")
+    os.environ["PATH"] = (
+        external_before + os.pathsep + os.environ["PATH"] +
+        os.pathsep + external_after
+    )
     first_cookie.close()
     first_cookie = None
     ctypes.WinDLL(remaining_name)
@@ -149,6 +163,25 @@ except OSError:
     pass
 else:
     raise AssertionError("a closed DLL directory remained searchable")
+
+expected_path = external_before
+if original_path:
+    expected_path += os.pathsep + original_path
+expected_path += os.pathsep + external_after
+if os.environ.get("PATH") != expected_path:
+    raise AssertionError(
+        "legacy DLL-directory cleanup did not preserve external PATH changes: "
+        f"{os.environ.get('PATH')!r} != {expected_path!r}"
+    )
+
+os.environ.pop("PATH", None)
+missing_path_cookie = os.add_dll_directory(first_directory)
+missing_path_cookie.close()
+if "PATH" in os.environ:
+    raise AssertionError("legacy DLL-directory cleanup did not restore a missing PATH")
+if original_path is not None:
+    os.environ["PATH"] = original_path
+nt._add_dll_directory = original_add_dll_directory
 """
     subprocess.run(
         [
@@ -203,6 +236,89 @@ with tempfile.TemporaryDirectory() as directory:
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
     )
+
+# If an assembled application includes pywin32, exercise its real bootstrap
+# and compiled modules rather than treating the synthetic .pth probe above as
+# sufficient evidence.  Each import starts in a fresh process so both
+# pywintypes-first and dependent-extension-first loader orders are covered.
+pywin32_sites = []
+for directory, _, filenames in os.walk(package_root):
+    if "pywin32.pth" in filenames:
+        pywin32_sites.append(directory)
+if pywin32_sites:
+    pywin32_modules = (
+        "_win32sysloader",
+        "pywintypes",
+        "pythoncom",
+        "win32api",
+        "win32event",
+        "win32file",
+        "win32pipe",
+        "win32process",
+        "win32security",
+        "win32service",
+        "servicemanager",
+    )
+    site_setup = "; ".join(
+        f"site.addsitedir({directory!r})" for directory in pywin32_sites
+    )
+    for module_name in pywin32_modules:
+        import_script = (
+            "import importlib, site; " + site_setup + "; "
+            f"importlib.import_module({module_name!r})"
+        )
+        imported = subprocess.run(
+            [sys.executable, "-I", "-c", import_script],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=30,
+        )
+        if imported.returncode:
+            raise AssertionError(
+                f"pywin32 import failed for {module_name}:\n"
+                f"stdout:\n{imported.stdout}\n"
+                f"stderr:\n{imported.stderr}"
+            )
+
+declared_smoke_modules = package_root / "RTM-SMOKE-MODULES.txt"
+if declared_smoke_modules.is_file():
+    module_names = []
+    for line_number, line in enumerate(
+            declared_smoke_modules.read_text(encoding="utf-8-sig").splitlines(), 1):
+        module_name = line.strip()
+        if not module_name or module_name.startswith("#"):
+            continue
+        if not all(part.isidentifier() for part in module_name.split(".")):
+            raise AssertionError(
+                f"{declared_smoke_modules.name}:{line_number}: "
+                f"invalid module name {module_name!r}"
+            )
+        module_names.append(module_name)
+    for module_name in module_names:
+        declared_sites = list(pywin32_sites)
+        conventional_site = package_root / "Lib" / "site-packages"
+        if conventional_site.is_dir() and str(conventional_site) not in declared_sites:
+            declared_sites.append(str(conventional_site))
+        commands = ["import importlib, site"]
+        commands.extend(
+            f"site.addsitedir({directory!r})" for directory in declared_sites
+        )
+        commands.append(f"importlib.import_module({module_name!r})")
+        import_script = "; ".join(commands)
+        imported = subprocess.run(
+            [sys.executable, "-I", "-c", import_script],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            timeout=60,
+        )
+        if imported.returncode:
+            raise AssertionError(
+                f"declared RTM smoke import failed for {module_name}:\n"
+                f"stdout:\n{imported.stdout}\n"
+                f"stderr:\n{imported.stderr}"
+            )
 
 with tempfile.TemporaryFile() as mapped_file:
     mapped_file.write(b"\0" * 4096)

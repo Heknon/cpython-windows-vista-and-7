@@ -35,16 +35,78 @@ $allowedSystemDlls = @(
     (Import-PowerShellDataFile $AllowedSystemDllsPath).Dlls |
         ForEach-Object { $_.ToUpperInvariant() }
 )
-$packagedDlls = @{}
-Get-ChildItem $PackageDirectory -File -Recurse | ForEach-Object {
-    $packagedDlls[$_.Name.ToUpperInvariant()] = $true
+$failures = New-Object System.Collections.Generic.List[string]
+
+function Get-NormalizedDirectory {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    return [IO.Path]::GetFullPath($Path).TrimEnd('\').ToUpperInvariant()
 }
 
-$failures = New-Object System.Collections.Generic.List[string]
+$packageDirectory = [IO.Path]::GetFullPath($PackageDirectory)
+$searchableDirectories = New-Object 'System.Collections.Generic.HashSet[string]' `
+    ([StringComparer]::OrdinalIgnoreCase)
+[void]$searchableDirectories.Add((Get-NormalizedDirectory $packageDirectory))
+if ($env:PATH) {
+    $env:PATH.Split([IO.Path]::PathSeparator) | Where-Object { $_ } | ForEach-Object {
+        [void]$searchableDirectories.Add((Get-NormalizedDirectory $_))
+    }
+}
+Get-ChildItem $PackageDirectory -Directory -Recurse | Where-Object {
+    $_.Name -ieq 'pywin32_system32' -or $_.Name.EndsWith('.libs', [StringComparison]::OrdinalIgnoreCase)
+} | ForEach-Object {
+    [void]$searchableDirectories.Add((Get-NormalizedDirectory $_.FullName))
+}
+
+$dllDirectoryDeclaration = Join-Path $PackageDirectory 'RTM-DLL-DIRECTORIES.txt'
+if (Test-Path $dllDirectoryDeclaration -PathType Leaf) {
+    $lineNumber = 0
+    Get-Content $dllDirectoryDeclaration | ForEach-Object {
+        $lineNumber++
+        $relative = $_.Trim()
+        if ($relative -and !$relative.StartsWith('#')) {
+            $candidate = [IO.Path]::GetFullPath((Join-Path $PackageDirectory $relative))
+            $insidePackage = $candidate -ieq $PackageDirectory -or
+                $candidate.StartsWith($PackageDirectory.TrimEnd('\') + '\', [StringComparison]::OrdinalIgnoreCase)
+            if (!$insidePackage) {
+                $failures.Add("RTM-DLL-DIRECTORIES.txt:${lineNumber}: directory escapes package root")
+            } elseif (!(Test-Path $candidate -PathType Container)) {
+                $failures.Add("RTM-DLL-DIRECTORIES.txt:${lineNumber}: directory does not exist: $relative")
+            } else {
+                [void]$searchableDirectories.Add((Get-NormalizedDirectory $candidate))
+            }
+        }
+    }
+}
+
+$packagedDlls = @{}
+Get-ChildItem $PackageDirectory -File -Recurse | ForEach-Object {
+    $key = $_.Name.ToUpperInvariant()
+    if (!$packagedDlls.ContainsKey($key)) {
+        $packagedDlls[$key] = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+    }
+    $packagedDlls[$key].Add($_)
+}
+
 $missingDependencies = New-Object System.Collections.Generic.HashSet[string]
 $dependencyReport = New-Object System.Collections.Generic.List[object]
 $binaries = Get-ChildItem $PackageDirectory -File -Recurse |
     Where-Object { $_.Extension -in @(".dll", ".exe", ".pyd") }
+
+foreach ($entry in $packagedDlls.GetEnumerator()) {
+    if ($entry.Value.Count -lt 2 -or
+        [IO.Path]::GetExtension($entry.Key).ToLowerInvariant() -notin @(".dll", ".exe", ".pyd")) {
+        continue
+    }
+    $hashes = @($entry.Value | ForEach-Object {
+        (Get-FileHash $_.FullName -Algorithm SHA256).Hash
+    } | Sort-Object -Unique)
+    if ($hashes.Count -gt 1) {
+        $locations = @($entry.Value | ForEach-Object {
+            $_.FullName.Substring($PackageDirectory.Length + 1).Replace("\", "/")
+        }) -join ", "
+        $failures.Add("$($entry.Key) has conflicting duplicate binaries: $locations")
+    }
+}
 
 $pythonDll = Get-ChildItem $PackageDirectory -Filter "python3*.dll" -File |
     Where-Object { $_.Name -ne "python3.dll" } |
@@ -100,6 +162,21 @@ foreach ($binary in $binaries) {
             $failures.Add(
                 "$($binary.Name) depends on $dependency, which is neither packaged nor allowed on Vista RTM"
             )
+        } elseif ($packagedDlls.ContainsKey($dependency) -and $dependency -notin $allowedSystemDlls) {
+            $binaryDirectory = Get-NormalizedDirectory $binary.DirectoryName
+            $reachable = @($packagedDlls[$dependency] | Where-Object {
+                $candidateDirectory = Get-NormalizedDirectory $_.DirectoryName
+                $candidateDirectory -eq $binaryDirectory -or
+                    $searchableDirectories.Contains($candidateDirectory)
+            })
+            if ($reachable.Count -eq 0) {
+                $locations = @($packagedDlls[$dependency] | ForEach-Object {
+                    $_.FullName.Substring($PackageDirectory.Length + 1).Replace('\', '/')
+                }) -join ', '
+                $failures.Add(
+                    "$($binary.Name) depends on packaged $dependency, but no copy is reachable: $locations"
+                )
+            }
         }
     }
 

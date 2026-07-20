@@ -24,6 +24,7 @@ import json  # noqa: E402
 import hashlib  # noqa: E402
 from pathlib import Path  # noqa: E402
 import platform  # noqa: E402
+import subprocess  # noqa: E402
 
 root = Path(root)
 manifest_path = root / "ARTIFACT-MANIFEST.json"
@@ -52,6 +53,19 @@ for entry in manifest.get("files", ()):
 # Importing the packaged script executes the full native-module and functional
 # smoke suite before the success evidence below is emitted.
 import smoke_test  # noqa: E402,F401
+
+regression = os.path.join(root, "rtm_regression.py")
+completed = subprocess.run(
+    [sys.executable, "-I", regression],
+    stdout=subprocess.PIPE,
+    stderr=subprocess.STDOUT,
+    text=True,
+)
+if completed.returncode:
+    raise AssertionError(
+        "RTM CPython regression groups failed:\n" + completed.stdout
+    )
+print(completed.stdout, end="")
 
 result = {
     "event": "rtm-guest-validation-passed",

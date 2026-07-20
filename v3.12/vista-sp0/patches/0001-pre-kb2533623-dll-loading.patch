@@ -220,7 +220,7 @@ diff --git a/v3.12/Python-3.12.10/Lib/os.py b/v3.12/Python-3.12.10/Lib/os.py
 index 465742d..ae9b0b5 100644
 --- a/v3.12/Python-3.12.10/Lib/os.py
 +++ b/v3.12/Python-3.12.10/Lib/os.py
-@@ -1125,4 +1125,71 @@ class PathLike(abc.ABC):
+@@ -1125,4 +1125,104 @@ class PathLike(abc.ABC):
  if name == 'nt':
 +    # Windows Vista and Windows 7 without KB2533623 do not provide
 +    # AddDllDirectory/RemoveDllDirectory.  Keep their directories in a
@@ -228,31 +228,41 @@ index 465742d..ae9b0b5 100644
 +    # extension imports and ctypes can still resolve dependencies.  The GIL
 +    # serializes updates to this list.
 +    _legacy_dll_directories = []
-+    _legacy_dll_path_prefix = None
++    _legacy_dll_path_entries = ()
++    _legacy_dll_path_originally_missing = False
++
++    def _legacy_path_key(entry):
++        return path.normcase(path.normpath(entry))
++
++    def _strip_legacy_dll_path_entries(entries):
++        managed = _legacy_dll_path_entries
++        if not managed or len(entries) < len(managed):
++            return entries
++
++        managed_keys = tuple(_legacy_path_key(entry) for entry in managed)
++        entry_keys = tuple(_legacy_path_key(entry) for entry in entries)
++        limit = len(entries) - len(managed) + 1
++        for index in range(limit):
++            if entry_keys[index:index + len(managed)] == managed_keys:
++                return entries[:index] + entries[index + len(managed):]
++        return entries
 +
 +    def _refresh_legacy_dll_path():
-+        global _legacy_dll_path_prefix
++        global _legacy_dll_path_entries
 +
-+        current = environ.get('PATH')
-+        if _legacy_dll_path_prefix:
-+            if current == _legacy_dll_path_prefix:
-+                current = None
-+            elif (current is not None and
-+                  current.startswith(_legacy_dll_path_prefix + pathsep)):
-+                current = current[len(_legacy_dll_path_prefix) + 1:]
-+
-+        prefix = pathsep.join(
++        current = environ.get('PATH', '')
++        entries = current.split(pathsep) if current else []
++        entries = _strip_legacy_dll_path_entries(entries)
++        managed = tuple(
 +            directory for _, directory in reversed(_legacy_dll_directories)
 +        )
-+        if prefix:
-+            environ['PATH'] = prefix + (pathsep + current if current else '')
-+            _legacy_dll_path_prefix = prefix
++        combined = list(managed) + entries
++        if combined or not (_legacy_dll_path_originally_missing and
++                            not _legacy_dll_directories):
++            environ['PATH'] = pathsep.join(combined)
 +        else:
-+            if current is None:
-+                environ.pop('PATH', None)
-+            else:
-+                environ['PATH'] = current
-+            _legacy_dll_path_prefix = None
++            environ.pop('PATH', None)
++        _legacy_dll_path_entries = managed
 +
 +    def _legacy_add_dll_directory(directory):
 +        import nt
@@ -270,9 +280,23 @@ index 465742d..ae9b0b5 100644
 +                2, "The system cannot find the path specified", directory
 +            )
 +
++        global _legacy_dll_path_originally_missing
++
 +        token = object()
++        first_entry = not _legacy_dll_directories
++        if first_entry:
++            _legacy_dll_path_originally_missing = 'PATH' not in environ
 +        _legacy_dll_directories.append((token, directory))
-+        _refresh_legacy_dll_path()
++        try:
++            _refresh_legacy_dll_path()
++        except BaseException:
++            _legacy_dll_directories.pop()
++            try:
++                _refresh_legacy_dll_path()
++            finally:
++                if first_entry:
++                    _legacy_dll_path_originally_missing = False
++            raise
 +        return _AddedDllDirectory(
 +            directory,
 +            token,
@@ -280,10 +304,19 @@ index 465742d..ae9b0b5 100644
 +        )
 +
 +    def _legacy_remove_dll_directory(token):
++        global _legacy_dll_path_originally_missing
++
 +        for index, (candidate, _) in enumerate(_legacy_dll_directories):
 +            if candidate is token:
-+                del _legacy_dll_directories[index]
-+                _refresh_legacy_dll_path()
++                removed = _legacy_dll_directories.pop(index)
++                try:
++                    _refresh_legacy_dll_path()
++                except BaseException:
++                    _legacy_dll_directories.insert(index, removed)
++                    _refresh_legacy_dll_path()
++                    raise
++                if not _legacy_dll_directories:
++                    _legacy_dll_path_originally_missing = False
 +                return
 +        raise TypeError(
 +            "Provided cookie was not returned from os.add_dll_directory"
@@ -292,7 +325,7 @@ index 465742d..ae9b0b5 100644
      class _AddedDllDirectory:
          def __init__(self, path, cookie, remove_dll_directory):
              self.path = path
-@@ -1151,7 +1218,10 @@ if name == 'nt':
+@@ -1151,7 +1251,10 @@ if name == 'nt':
          using it in a with statement.
          """
          import nt

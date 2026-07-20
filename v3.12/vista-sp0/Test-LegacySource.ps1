@@ -87,6 +87,33 @@ Get-ChildItem $SourceRoot -File -Recurse -Include *.c,*.cpp | ForEach-Object {
     }
 }
 
+# GetProcAddress hides API dependencies from the PE import table. Keep every
+# source file that uses it under explicit review so a new dynamic post-Vista
+# API cannot bypass the static import audit unnoticed.
+$approvedGetProcAddressFiles = @(
+    (Join-Path $SourceRoot "Include\internal\pycore_fileutils_windows.h"),
+    (Join-Path $SourceRoot "Modules\_ctypes\_ctypes.c"),
+    (Join-Path $SourceRoot "Modules\_ctypes\callproc.c"),
+    (Join-Path $SourceRoot "Modules\_ssl.c"),
+    (Join-Path $SourceRoot "Modules\_winapi.c"),
+    (Join-Path $SourceRoot "Modules\posixmodule.c"),
+    (Join-Path $SourceRoot "PC\frozen_dllmain.c"),
+    (Join-Path $SourceRoot "PC\launcher2.c"),
+    (Join-Path $SourceRoot "PC\winreg.c"),
+    (Join-Path $SourceRoot "Python\dynload_win.c"),
+    (Join-Path $SourceRoot "Python\fileutils.c"),
+    (Join-Path $SourceRoot "Tools\msi\bundle\bootstrap\PythonBootstrapperApplication.cpp")
+) | ForEach-Object { [IO.Path]::GetFullPath($_).ToUpperInvariant() }
+
+Get-ChildItem $SourceRoot -File -Recurse -Include *.c,*.cpp,*.h | ForEach-Object {
+    if (Select-String -Path $_.FullName -Pattern '\bGetProcAddress\s*\(' -Quiet) {
+        $normalized = [IO.Path]::GetFullPath($_.FullName).ToUpperInvariant()
+        if ($normalized -notin $approvedGetProcAddressFiles) {
+            $failures.Add("unreviewed GetProcAddress call site in $($_.FullName)")
+        }
+    }
+}
+
 if ($failures.Count -gt 0) {
     $failures | ForEach-Object { Write-Error $_ -ErrorAction Continue }
     throw "The patched source contains unreviewed pre-KB2533623 loader paths."

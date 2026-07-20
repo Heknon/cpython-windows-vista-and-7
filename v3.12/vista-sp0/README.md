@@ -23,7 +23,9 @@ architecture.
 - When those exports are absent, `os.add_dll_directory()` maintains all active
   directories in a managed process `PATH` prefix. Its returned objects retain
   normal `close()` and context-manager behavior, including out-of-order
-  removal, so packages such as pywin32 can bootstrap without special patches.
+  removal. External `PATH` prefixes and suffixes added while cookies are active
+  are preserved, and the original absence of `PATH` is restored, so packages
+  such as pywin32 can bootstrap without special patches.
 - The extension-module loader first uses CPython's restricted modern search
   flags. If and only if Windows returns `ERROR_INVALID_PARAMETER`, it retries
   the absolute module path with `LOAD_WITH_ALTERED_SEARCH_PATH`.
@@ -33,17 +35,31 @@ architecture.
 - The PE audit checks the dependency closure, executable subsystem version,
   and known post-Vista imports. A DLL that is neither packaged nor in the
   Vista RTM system-DLL allowlist fails the build.
-- The source-loader audit rejects new, unreviewed `LoadLibraryEx` call sites
-  and verifies the pre-KB2533623 fallbacks used by both the extension loader
-  and `_ctypes`.
+- The source-loader audit rejects new, unreviewed `LoadLibraryEx` and
+  `GetProcAddress` call sites and verifies the pre-KB2533623 fallbacks used by
+  both the extension loader and `_ctypes`.
 - Before importing packaged extension modules, the RTM guest preflight parses
   every packaged PE image and verifies each normal and delay-loaded import
   against the exports of the actual clean guest's system DLLs. Forwarded
-  exports are resolved recursively.
+  exports are resolved recursively. Every duplicate basename is inspected;
+  conflicting copies, unreachable private dependencies, architecture
+  mismatches, and executable subsystem versions newer than 6.0 fail validation.
 - The packaged smoke test imports every `.pyd` in the artifact and exercises
   files, `shutil.copy`, `copy2`, `copytree`, compression, hashing, XML,
   SQLite, SSL initialization, both default `ctypes` DLL-loading modes, memory
-  mapping, clocks, threads, subprocesses, TCP loopback, and `asyncio`.
+  mapping, clocks, threads, subprocesses, TCP loopback, and `asyncio`. If
+  pywin32 is present, its real `.pth` bootstrap and core compiled modules are
+  imported in fresh processes in both dependency-first orders.
+- The package carries CPython's regression tests and runs the Windows-facing
+  `asyncio`, `_ctypes`, import, multiprocessing, path, filesystem, socket, SSL,
+  subprocess, time, and registry groups on the host and again on the RTM guest.
+
+For an assembled application, list any application-specific modules that must
+import successfully in `RTM-SMOKE-MODULES.txt`, one dotted module name per line.
+Private DLL directories outside the application directory, `PATH`,
+`pywin32_system32`, or a conventional `*.libs` directory must be listed as
+package-relative paths in `RTM-DLL-DIRECTORIES.txt`. These declarations turn
+otherwise invisible application bootstrap assumptions into validation gates.
 
 The hosted system-DLL list remains a DLL-name allowlist rather than an RTM
 export manifest. Exact symbol compatibility is therefore decided by the

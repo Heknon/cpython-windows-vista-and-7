@@ -42,6 +42,7 @@ class PEImage:
             raise PEFormatError(f"{self.path}: unsupported optional-header magic {magic:#x}")
 
         self.size_of_headers = self._unpack_from("<I", optional + 60)[0]
+        self.subsystem_version = self._unpack_from("<HH", optional + 48)
         directory_count = self._unpack_from("<I", directory_offset - 4)[0]
         self.directories = []
         for index in range(min(directory_count, 16)):
@@ -200,11 +201,57 @@ def _binary_paths(package_root):
                 yield os.path.join(directory, filename)
 
 
+def _normalized_directory(path):
+    return os.path.normcase(os.path.abspath(path))
+
+
+def _declared_dll_directories(package_root):
+    directories = set()
+    path_value = os.environ.get("PATH", "")
+    for entry in path_value.split(os.pathsep):
+        if entry:
+            directories.add(_normalized_directory(entry))
+
+    # These are the conventional private DLL directories used by pywin32 and
+    # by wheels repaired with delvewheel.  They are activated by package
+    # bootstrap code before the corresponding extension modules are imported.
+    for directory, dirnames, _ in os.walk(package_root):
+        for dirname in dirnames:
+            lowered = dirname.lower()
+            if lowered == "pywin32_system32" or lowered.endswith(".libs"):
+                directories.add(_normalized_directory(os.path.join(directory, dirname)))
+
+    declaration = os.path.join(package_root, "RTM-DLL-DIRECTORIES.txt")
+    if os.path.isfile(declaration):
+        with open(declaration, "r", encoding="utf-8-sig") as stream:
+            for line_number, line in enumerate(stream, 1):
+                relative = line.strip()
+                if not relative or relative.startswith("#"):
+                    continue
+                candidate = os.path.abspath(os.path.join(package_root, relative))
+                try:
+                    common = os.path.commonpath((package_root, candidate))
+                except ValueError:
+                    common = ""
+                if os.path.normcase(common) != os.path.normcase(package_root):
+                    raise AssertionError(
+                        f"{declaration}:{line_number}: DLL directory escapes package root"
+                    )
+                if not os.path.isdir(candidate):
+                    raise AssertionError(
+                        f"{declaration}:{line_number}: DLL directory does not exist: "
+                        f"{relative}"
+                    )
+                directories.add(_normalized_directory(candidate))
+    return directories
+
+
 def validate_package(package_root=None):
     package_root = os.path.abspath(package_root or os.path.dirname(sys.executable))
-    packaged = {
-        os.path.basename(path).upper(): path for path in _binary_paths(package_root)
-    }
+    binary_paths = sorted(_binary_paths(package_root), key=os.path.normcase)
+    packaged = {}
+    for path in binary_paths:
+        packaged.setdefault(os.path.basename(path).upper(), []).append(path)
     system_root = os.environ.get("SystemRoot")
     if not system_root:
         raise AssertionError("SystemRoot is not set")
@@ -214,13 +261,40 @@ def validate_package(package_root=None):
     failures = []
     checked_imports = 0
     expected_machine = 0x8664 if sys.maxsize > 2**32 else 0x014C
+    searchable_directories = _declared_dll_directories(package_root)
+    searchable_directories.add(_normalized_directory(package_root))
 
-    def dependency_path(dll):
-        packaged_path = packaged.get(dll.upper())
-        if packaged_path:
-            return packaged_path
+    def relative(path):
+        return os.path.relpath(path, package_root).replace("\\", "/")
+
+    def dependency_path(dll, importer_path):
+        candidates = packaged.get(dll.upper(), ())
+        importer_directory = _normalized_directory(os.path.dirname(importer_path))
+        application_directory = _normalized_directory(package_root)
+        local = [
+            path for path in candidates
+            if (_normalized_directory(os.path.dirname(path)) == importer_directory or
+                _normalized_directory(os.path.dirname(path)) == application_directory)
+        ]
+        if local:
+            return sorted(local, key=os.path.normcase)[0], None
         path = os.path.join(system_directory, dll)
-        return path if os.path.isfile(path) else None
+        if os.path.isfile(path):
+            return path, None
+        private = [
+            path for path in candidates
+            if _normalized_directory(os.path.dirname(path)) in searchable_directories
+        ]
+        if private:
+            return sorted(private, key=os.path.normcase)[0], None
+        if candidates:
+            locations = ", ".join(relative(path) for path in candidates)
+            return None, (
+                f"packaged dependency {dll} is not in the importing binary's "
+                f"directory, the application directory, PATH, a conventional private "
+                f"DLL directory, or RTM-DLL-DIRECTORIES.txt: {locations}"
+            )
+        return None, f"missing dependency {dll}"
 
     def image(path):
         normalized = os.path.normcase(os.path.abspath(path))
@@ -234,11 +308,11 @@ def validate_package(package_root=None):
             export_cache[normalized] = image(path).exports()
         return export_cache[normalized]
 
-    def resolve_export(dll, symbol, chain):
-        path = dependency_path(dll)
+    def resolve_export(dll, symbol, chain, importer_path):
+        path, lookup_failure = dependency_path(dll, importer_path)
         label = f"{dll}!{symbol}"
         if not path:
-            return f"missing dependency {dll}"
+            return lookup_failure
         key = (os.path.normcase(os.path.abspath(path)), symbol)
         if key in chain:
             return f"forwarder cycle at {label}"
@@ -258,9 +332,28 @@ def validate_package(package_root=None):
                 target_symbol = int(target_symbol[1:])
             except ValueError:
                 return f"invalid ordinal forwarder {label} -> {forwarder}"
-        return resolve_export(target_dll, target_symbol, chain | {key})
+        return resolve_export(target_dll, target_symbol, chain | {key}, path)
 
-    for binary_name, binary_path in sorted(packaged.items()):
+    # Never collapse duplicate basenames.  Identical copies are harmless and
+    # are all inspected; differing copies are loader-order dependent and must
+    # be rejected before any extension module is imported.
+    for binary_name, paths in sorted(packaged.items()):
+        if len(paths) < 2:
+            continue
+        try:
+            first_data = image(paths[0]).data
+            if any(image(path).data != first_data for path in paths[1:]):
+                failures.append(
+                    f"{binary_name}: conflicting duplicate binaries: " +
+                    ", ".join(relative(path) for path in paths)
+                )
+        except (OSError, PEFormatError) as error:
+            failures.append(
+                f"{binary_name}: could not compare duplicate binaries: {error}"
+            )
+
+    for binary_path in binary_paths:
+        binary_name = relative(binary_path)
         try:
             binary = image(binary_path)
             if binary.machine != expected_machine:
@@ -268,9 +361,16 @@ def validate_package(package_root=None):
                     f"{binary_name}: machine {binary.machine:#x} does not match "
                     f"the running interpreter ({expected_machine:#x})"
                 )
+            if (os.path.splitext(binary_path)[1].lower() == ".exe" and
+                    binary.subsystem_version > (6, 0)):
+                failures.append(
+                    f"{binary_name}: subsystem version "
+                    f"{binary.subsystem_version[0]}.{binary.subsystem_version[1]} "
+                    "is newer than Vista RTM 6.0"
+                )
             for dll, symbol, delayed in binary.imports():
                 checked_imports += 1
-                failure = resolve_export(dll, symbol, set())
+                failure = resolve_export(dll, symbol, set(), binary_path)
                 if failure:
                     kind = "delay import" if delayed else "import"
                     failures.append(f"{binary_name}: {kind} {dll}!{symbol}: {failure}")
@@ -283,7 +383,7 @@ def validate_package(package_root=None):
         )
     result = {
         "event": "rtm-pe-preflight-passed",
-        "binaries": len(packaged),
+        "binaries": len(binary_paths),
         "imports": checked_imports,
         "system_directory": system_directory,
     }

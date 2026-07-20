@@ -138,6 +138,10 @@ Copy-Item (Join-Path $PSScriptRoot "smoke_test.py") $packageDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot "guest_validate.py") $packageDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot "guest_validate.cmd") $packageDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot "rtm_preflight.py") $packageDirectory -Force
+Copy-Item (Join-Path $PSScriptRoot "rtm_regression.py") $packageDirectory -Force
+$validationLib = Join-Path $packageDirectory "validation-lib"
+New-Item -ItemType Directory -Force -Path $validationLib | Out-Null
+Copy-Item (Join-Path $sourceRoot "Lib\test") $validationLib -Recurse -Force
 
 & (Join-Path $PSScriptRoot "Test-PeImports.ps1") -PackageDirectory $packageDirectory
 if ($LASTEXITCODE -ne 0) {
