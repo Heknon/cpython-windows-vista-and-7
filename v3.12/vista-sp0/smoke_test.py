@@ -121,25 +121,52 @@ with tempfile.TemporaryDirectory() as first_directory, \
     shutil.copy2(compatibility_dll, Path(second_directory, remaining_name))
     shutil.copy2(compatibility_dll, Path(second_directory, removed_name))
 
-    first_cookie = os.add_dll_directory(first_directory)
-    second_cookie = os.add_dll_directory(second_directory)
-    try:
-        ctypes.WinDLL(first_name)
-        ctypes.WinDLL(second_name)
-        first_cookie.close()
-        first_cookie = None
-        ctypes.WinDLL(remaining_name)
-    finally:
-        if first_cookie is not None:
-            first_cookie.close()
-        second_cookie.close()
+    # Run DLL loads in a child so Windows releases their module handles before
+    # TemporaryDirectory removes the copied DLLs.
+    dll_directory_script = """
+import ctypes
+import os
+import sys
 
-    try:
-        ctypes.WinDLL(removed_name)
-    except OSError:
-        pass
-    else:
-        raise AssertionError("a closed DLL directory remained searchable")
+first_directory, second_directory = sys.argv[1:3]
+first_name, second_name, remaining_name, removed_name = sys.argv[3:]
+first_cookie = os.add_dll_directory(first_directory)
+second_cookie = os.add_dll_directory(second_directory)
+try:
+    ctypes.WinDLL(first_name)
+    ctypes.WinDLL(second_name)
+    first_cookie.close()
+    first_cookie = None
+    ctypes.WinDLL(remaining_name)
+finally:
+    if first_cookie is not None:
+        first_cookie.close()
+    second_cookie.close()
+
+try:
+    ctypes.WinDLL(removed_name)
+except OSError:
+    pass
+else:
+    raise AssertionError("a closed DLL directory remained searchable")
+"""
+    subprocess.run(
+        [
+            sys.executable,
+            "-I",
+            "-c",
+            dll_directory_script,
+            first_directory,
+            second_directory,
+            first_name,
+            second_name,
+            remaining_name,
+            removed_name,
+        ],
+        check=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
 
 # Reproduce the pywin32 startup pattern: a .pth file imports a bootstrap
 # module, which adds a DLL directory and immediately loads a dependency from
