@@ -47,7 +47,7 @@ if ($LASTEXITCODE -ne 0) {
 $expectedDistributions = @(
     "plumbum-1.9.0.dist-info"
     "psutil-7.0.0.dist-info"
-    "pywin32-310.dist-info"
+    "pywin32-307.dist-info"
     "rpyc-6.0.2.dist-info"
 )
 $actualDistributions = @(
