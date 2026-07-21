@@ -41,6 +41,7 @@
         "api-ms-win-crt-time-l1-1-0.dll"        = "f4163cbc464a82fce47442447351265a287561c8d64ecc2f2f97f5e73bcb4347"
         "api-ms-win-crt-utility-l1-1-0.dll"     = "bba068f29609630e8c6547f1e9219e11077426c4f1e4a93b712bfba11a149358"
         "ucrtbase.dll"                          = "2ab2a74bcb5bfd8248d232eb3bc56698fb5173b9ff7fc0daf87d8120d0f448d7"
+        "concrt140.dll"                         = "a93c3a12a2521dc91fe7451de56f90fd12010536dd91003c57646b230e80dcf9"
         "msvcp140.dll"                          = "72d7bb30aaa1f7f63345f536698c6908fa24032c5b2d30b42f3f8b84102b8909"
         "vcruntime140.dll"                      = "0269bf091af2cfce2b68c41ed8bbc41353443792d657648e109736851a19df68"
     }
@@ -86,6 +87,7 @@
         "api-ms-win-crt-time-l1-1-0.dll"        = "cafdb772a1d7acf0807478fdba1e00fd101fc29c136547b37131f80d21dacffd"
         "api-ms-win-crt-utility-l1-1-0.dll"     = "8858d883d180cea63e3bf4a3f5bc9e0f9fa16c9a35a84c4efe65308cea13a364"
         "ucrtbase.dll"                          = "7041885b2a8300bf12a46510228ce8d103d74e83b1baf696b84ff3e5ab785dd1"
+        "concrt140.dll"                         = "37079dd798f06fc029a9f6bd2aaf53c5f1dd62e22745ea4d8c2adf0b5fb2b7d2"
         "msvcp140.dll"                          = "55bf6b3ad5cdae8fe4b46b2cdc729317f1e2be411bf7438c9eb1d073e37d71e4"
         "vcruntime140.dll"                      = "8e08575492175e042f093f325b07a5c14ca71e7c581474838db3d48f5aab1312"
     }

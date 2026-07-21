@@ -51,12 +51,15 @@ architecture.
   pywin32 is present, its real `.pth` bootstrap and core compiled modules are
   imported in fresh processes in both dependency-first orders.
 - The validation bundle also carries a hash-pinned, validation-only package
-  matrix outside Python's default import path: pywin32 307, psutil 7.0.0,
-  RPyC 6.0.2, and RPyC's plumbum 1.9.0 dependency. The PE audits inspect all
-  of their native binaries. Separate smoke tests exercise pywin32 files,
-  events, security tokens, and COM; psutil process and system queries; and an
-  RPyC protocol serialization round trip. RPyC-over-VMCI and other application
-  integration remain outside these PRs.
+  matrix outside Python's default import path: psutil 7.0.0, RPyC 6.0.2, and
+  RPyC's plumbum 1.9.0 dependency on both architectures, plus pywin32 307 on
+  Win32. The upstream x64 pywin32 307 wheel is deliberately excluded because
+  its native modules require the post-VC141 `vcruntime140_1.dll`; the PE audit
+  rejects that wheel before runtime testing. Separate smoke tests exercise
+  pywin32 files, events, security tokens, and COM on Win32; psutil process and
+  system queries on both architectures; and an RPyC protocol serialization
+  round trip. RPyC-over-VMCI and other application integration remain outside
+  these PRs.
 - The package carries an unoptimized validation copy of CPython's standard
   library and runs the Windows-facing `asyncio`, `_ctypes`, import,
   multiprocessing, path, filesystem, socket, SSL, subprocess, time, and

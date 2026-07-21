@@ -21,9 +21,10 @@ site.addsitedir(str(validation_site))
 expected_versions = {
     "plumbum": "1.9.0",
     "psutil": "7.0.0",
-    "pywin32": "307",
     "rpyc": "6.0.2",
 }
+if sys.maxsize <= 2**32:
+    expected_versions["pywin32"] = "307"
 for distribution, expected in expected_versions.items():
     actual = importlib.metadata.version(distribution)
     if actual != expected:
@@ -31,58 +32,70 @@ for distribution, expected in expected_versions.items():
             f"{distribution} version mismatch: expected {expected}, got {actual}"
         )
 
-# pywin32: exercise several independent native extensions and their shared
-# pywintypes/pythoncom DLLs, not just top-level imports.
-import pythoncom  # noqa: E402
-import win32api  # noqa: E402
-import win32con  # noqa: E402
-import win32event  # noqa: E402
-import win32file  # noqa: E402
-import win32security  # noqa: E402
+def test_pywin32():
+    # Exercise several independent native extensions and their shared
+    # pywintypes/pythoncom DLLs, not just top-level imports.
+    import pythoncom
+    import win32api
+    import win32con
+    import win32event
+    import win32file
+    import win32security
 
-if win32api.GetCurrentProcessId() != os.getpid():
-    raise AssertionError("pywin32 returned the wrong process ID")
+    if win32api.GetCurrentProcessId() != os.getpid():
+        raise AssertionError("pywin32 returned the wrong process ID")
 
-event = win32event.CreateEvent(None, True, False, None)
-try:
-    win32event.SetEvent(event)
-    if win32event.WaitForSingleObject(event, 0) != win32event.WAIT_OBJECT_0:
-        raise AssertionError("pywin32 event did not become signaled")
-finally:
-    event.Close()
-
-payload = b"vista-third-party-package-smoke"
-with tempfile.TemporaryDirectory() as directory:
-    path = str(Path(directory, "pywin32-round-trip.bin"))
-    handle = win32file.CreateFile(
-        path,
-        win32con.GENERIC_READ | win32con.GENERIC_WRITE,
-        0,
-        None,
-        win32con.CREATE_ALWAYS,
-        win32con.FILE_ATTRIBUTE_NORMAL,
-        None,
-    )
+    event = win32event.CreateEvent(None, True, False, None)
     try:
-        _, written = win32file.WriteFile(handle, payload)
-        if written != len(payload):
-            raise AssertionError("pywin32 did not write the complete payload")
-        win32file.SetFilePointer(handle, 0, win32con.FILE_BEGIN)
-        _, received = win32file.ReadFile(handle, len(payload))
-        if received != payload:
-            raise AssertionError("pywin32 file round trip failed")
+        win32event.SetEvent(event)
+        if win32event.WaitForSingleObject(event, 0) != win32event.WAIT_OBJECT_0:
+            raise AssertionError("pywin32 event did not become signaled")
     finally:
-        handle.Close()
+        event.Close()
 
-token = win32security.OpenProcessToken(
-    win32api.GetCurrentProcess(), win32con.TOKEN_QUERY
-)
-token.Close()
-pythoncom.CoInitialize()
-try:
-    pythoncom.CreateBindCtx(0)
-finally:
-    pythoncom.CoUninitialize()
+    payload = b"vista-third-party-package-smoke"
+    with tempfile.TemporaryDirectory() as directory:
+        path = str(Path(directory, "pywin32-round-trip.bin"))
+        handle = win32file.CreateFile(
+            path,
+            win32con.GENERIC_READ | win32con.GENERIC_WRITE,
+            0,
+            None,
+            win32con.CREATE_ALWAYS,
+            win32con.FILE_ATTRIBUTE_NORMAL,
+            None,
+        )
+        try:
+            _, written = win32file.WriteFile(handle, payload)
+            if written != len(payload):
+                raise AssertionError("pywin32 did not write the complete payload")
+            win32file.SetFilePointer(handle, 0, win32con.FILE_BEGIN)
+            _, received = win32file.ReadFile(handle, len(payload))
+            if received != payload:
+                raise AssertionError("pywin32 file round trip failed")
+        finally:
+            handle.Close()
+
+    token = win32security.OpenProcessToken(
+        win32api.GetCurrentProcess(), win32con.TOKEN_QUERY
+    )
+    token.Close()
+    pythoncom.CoInitialize()
+    try:
+        pythoncom.CreateBindCtx(0)
+    finally:
+        pythoncom.CoUninitialize()
+
+
+if sys.maxsize <= 2**32:
+    test_pywin32()
+else:
+    try:
+        importlib.metadata.version("pywin32")
+    except importlib.metadata.PackageNotFoundError:
+        pass
+    else:
+        raise AssertionError("the Vista-incompatible x64 pywin32 wheel was packaged")
 
 # psutil: calls below cross several process, memory, CPU, disk, and networking
 # native paths.  This catches extensions that import successfully but fail as
