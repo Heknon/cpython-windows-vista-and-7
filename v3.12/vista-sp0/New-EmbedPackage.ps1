@@ -67,7 +67,8 @@ $ucrtDirectories = Get-ChildItem (Join-Path ${env:ProgramFiles(x86)} "Windows Ki
     Where-Object { $_.FullName -match "\\ucrt\\DLLs\\$sdkArch$" } |
     Sort-Object FullName
 
-$ucrtFiles = $expectedHashes.Keys | Where-Object { $_ -ne "vcruntime140.dll" }
+$vcRuntimeFiles = @("vcruntime140.dll", "msvcp140.dll")
+$ucrtFiles = $expectedHashes.Keys | Where-Object { $_ -notin $vcRuntimeFiles }
 $ucrtDirectory = $ucrtDirectories | Where-Object {
     $candidate = $_.FullName
     @($ucrtFiles | Where-Object {
@@ -116,6 +117,38 @@ if ($v141Version.Major -ne 14 -or $v141Version.Minor -lt 10 -or $v141Version.Min
     throw "Expected a 14.1x VC141 runtime, found $v141Version at $($v141Runtime.FullName)."
 }
 Copy-Item $v141Runtime.FullName $packageDirectory -Force
+
+# Native third-party packages may use the VC++ standard library even though
+# CPython itself does not. Keep that runtime app-local as well; it is not a
+# Vista system DLL. This candidate is restricted to the same desktop VC141
+# payload as vcruntime140.dll. Its digest is printed so the reviewed value can
+# be promoted into RuntimeHashes.psd1 after the first matrix run.
+$v141CppRuntimes = Get-ChildItem $v141RedistRoot -Filter "msvcp140.dll" -File -Recurse |
+    Where-Object {
+        $_.FullName -match "Microsoft\.VC141\.CRT" -and
+        $_.FullName -match "\\$sdkArch\\" -and
+        $_.FullName -notmatch "\\onecore\\"
+    } |
+    Sort-Object FullName
+$v141CppRuntime = $v141CppRuntimes | Select-Object -First 1
+if (!$v141CppRuntime) {
+    throw "Could not locate the $sdkArch Microsoft.VC141.CRT C++ runtime."
+}
+$v141CppVersionMatch = [regex]::Match(
+    $v141CppRuntime.VersionInfo.FileVersion, "^\d+\.\d+\.\d+\.\d+"
+)
+if (!$v141CppVersionMatch.Success) {
+    throw "Could not parse the VC141 C++ runtime version at $($v141CppRuntime.FullName)."
+}
+$v141CppVersion = [Version]$v141CppVersionMatch.Value
+if ($v141CppVersion.Major -ne 14 -or
+        $v141CppVersion.Minor -lt 10 -or
+        $v141CppVersion.Minor -ge 20) {
+    throw "Expected a 14.1x VC141 C++ runtime, found $v141CppVersion at $($v141CppRuntime.FullName)."
+}
+$v141CppHash = (Get-FileHash $v141CppRuntime.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+Write-Host "Selected reviewed-candidate msvcp140.dll $v141CppVersion $v141CppHash from $($v141CppRuntime.FullName)."
+Copy-Item $v141CppRuntime.FullName $packageDirectory -Force
 
 # vcruntime140_1.dll was introduced after VC141. The embeddable-layout helper
 # may copy the runner's current runtime, so remove that unrelated DLL. The PE
