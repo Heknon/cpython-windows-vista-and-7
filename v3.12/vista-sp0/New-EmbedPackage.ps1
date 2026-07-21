@@ -130,9 +130,11 @@ $v141CppRuntimes = Get-ChildItem $v141RedistRoot -Filter "msvcp140.dll" -File -R
         $_.FullName -notmatch "\\onecore\\"
     } |
     Sort-Object FullName
-$v141CppRuntime = $v141CppRuntimes | Select-Object -First 1
+$v141CppRuntime = $v141CppRuntimes | Where-Object {
+    Test-ExpectedHash $_.FullName $expectedHashes["msvcp140.dll"]
+} | Select-Object -First 1
 if (!$v141CppRuntime) {
-    throw "Could not locate the $sdkArch Microsoft.VC141.CRT C++ runtime."
+    throw "Could not locate the reviewed $sdkArch Microsoft.VC141.CRT C++ runtime."
 }
 $v141CppVersionMatch = [regex]::Match(
     $v141CppRuntime.VersionInfo.FileVersion, "^\d+\.\d+\.\d+\.\d+"
@@ -146,9 +148,32 @@ if ($v141CppVersion.Major -ne 14 -or
         $v141CppVersion.Minor -ge 20) {
     throw "Expected a 14.1x VC141 C++ runtime, found $v141CppVersion at $($v141CppRuntime.FullName)."
 }
-$v141CppHash = (Get-FileHash $v141CppRuntime.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
-Write-Host "Selected reviewed-candidate msvcp140.dll $v141CppVersion $v141CppHash from $($v141CppRuntime.FullName)."
+Write-Host "Selected reviewed msvcp140.dll $v141CppVersion from $($v141CppRuntime.FullName)."
 Copy-Item $v141CppRuntime.FullName $packageDirectory -Force
+
+# msvcp140.dll uses the Concurrency Runtime from the same VC141 desktop
+# payload. Keep the pair together; the first matrix run prints the exact
+# digest so it can be promoted to RuntimeHashes.psd1 after review.
+$v141ConcurrencyRuntime = Join-Path $v141CppRuntime.Directory.FullName "concrt140.dll"
+if (!(Test-Path $v141ConcurrencyRuntime -PathType Leaf)) {
+    throw "The selected Microsoft.VC141.CRT payload has no concrt140.dll."
+}
+$v141ConcurrencyVersionMatch = [regex]::Match(
+    (Get-Item $v141ConcurrencyRuntime).VersionInfo.FileVersion,
+    "^\d+\.\d+\.\d+\.\d+"
+)
+if (!$v141ConcurrencyVersionMatch.Success) {
+    throw "Could not parse the VC141 Concurrency Runtime version at $v141ConcurrencyRuntime."
+}
+$v141ConcurrencyVersion = [Version]$v141ConcurrencyVersionMatch.Value
+if ($v141ConcurrencyVersion.Major -ne 14 -or
+        $v141ConcurrencyVersion.Minor -lt 10 -or
+        $v141ConcurrencyVersion.Minor -ge 20) {
+    throw "Expected a 14.1x VC141 Concurrency Runtime, found $v141ConcurrencyVersion at $v141ConcurrencyRuntime."
+}
+$v141ConcurrencyHash = (Get-FileHash $v141ConcurrencyRuntime -Algorithm SHA256).Hash.ToLowerInvariant()
+Write-Host "Selected reviewed-candidate concrt140.dll $v141ConcurrencyVersion $v141ConcurrencyHash from $v141ConcurrencyRuntime."
+Copy-Item $v141ConcurrencyRuntime $packageDirectory -Force
 
 # vcruntime140_1.dll was introduced after VC141. The embeddable-layout helper
 # may copy the runner's current runtime, so remove that unrelated DLL. The PE

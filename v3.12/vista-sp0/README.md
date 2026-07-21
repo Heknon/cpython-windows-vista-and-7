@@ -51,7 +51,7 @@ architecture.
   pywin32 is present, its real `.pth` bootstrap and core compiled modules are
   imported in fresh processes in both dependency-first orders.
 - The validation bundle also carries a hash-pinned, validation-only package
-  matrix outside Python's default import path: pywin32 310, psutil 7.0.0,
+  matrix outside Python's default import path: pywin32 307, psutil 7.0.0,
   RPyC 6.0.2, and RPyC's plumbum 1.9.0 dependency. The PE audits inspect all
   of their native binaries. Separate smoke tests exercise pywin32 files,
   events, security tokens, and COM; psutil process and system queries; and an

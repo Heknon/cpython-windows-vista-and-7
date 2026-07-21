@@ -21,7 +21,7 @@ site.addsitedir(str(validation_site))
 expected_versions = {
     "plumbum": "1.9.0",
     "psutil": "7.0.0",
-    "pywin32": "310",
+    "pywin32": "307",
     "rpyc": "6.0.2",
 }
 for distribution, expected in expected_versions.items():
