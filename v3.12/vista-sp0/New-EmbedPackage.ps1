@@ -139,6 +139,7 @@ Copy-Item (Join-Path $PSScriptRoot "guest_validate.py") $packageDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot "guest_validate.cmd") $packageDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot "rtm_preflight.py") $packageDirectory -Force
 Copy-Item (Join-Path $PSScriptRoot "rtm_regression.py") $packageDirectory -Force
+Copy-Item (Join-Path $PSScriptRoot "third_party_smoke.py") $packageDirectory -Force
 
 # A separate executable and versioned path file expose an unpacked source
 # library to regression subprocesses without changing the normal shipping
@@ -180,6 +181,16 @@ $testExtensions | Copy-Item -Destination $validationLib -Force
     "..\python312.zip"
     ".."
 ) | Set-Content (Join-Path $validationRunner "python312._pth") -Encoding Ascii
+
+# Add a small, reviewed package matrix outside the normal import path.  The PE
+# and guest audits below still inspect every native binary recursively, while
+# the functional smoke test opts into this directory explicitly.
+& (Join-Path $PSScriptRoot "Install-ValidationPackages.ps1") `
+    -Platform $Platform `
+    -PackageDirectory $packageDirectory
+if ($LASTEXITCODE -ne 0) {
+    throw "Installing third-party validation packages failed with exit code $LASTEXITCODE."
+}
 
 & (Join-Path $PSScriptRoot "Test-PeImports.ps1") -PackageDirectory $packageDirectory
 if ($LASTEXITCODE -ne 0) {

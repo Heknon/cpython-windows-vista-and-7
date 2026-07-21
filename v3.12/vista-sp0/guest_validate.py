@@ -53,6 +53,7 @@ for entry in manifest.get("files", ()):
 # Importing the packaged script executes the full native-module and functional
 # smoke suite before the success evidence below is emitted.
 import smoke_test  # noqa: E402,F401
+import third_party_smoke  # noqa: E402,F401
 
 regression = os.path.join(root, "rtm_regression.py")
 completed = subprocess.run(

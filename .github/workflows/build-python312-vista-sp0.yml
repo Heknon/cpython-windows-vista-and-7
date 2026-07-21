@@ -28,6 +28,11 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Configure package assembly Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
       - name: Configure MSBuild
         uses: microsoft/setup-msbuild@v2
 
@@ -90,9 +95,12 @@ jobs:
 
       - name: Run smoke tests on the build host
         shell: pwsh
-        run: >-
-          & "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/python.exe"
-          "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/smoke_test.py"
+        run: |
+          $package = "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}"
+          & "$package/python.exe" "$package/smoke_test.py"
+          if ($LASTEXITCODE -ne 0) { throw "CPython smoke tests failed." }
+          & "$package/python.exe" "$package/third_party_smoke.py"
+          if ($LASTEXITCODE -ne 0) { throw "Third-party package smoke tests failed." }
 
       - name: Run compatibility regression groups on the build host
         shell: pwsh
