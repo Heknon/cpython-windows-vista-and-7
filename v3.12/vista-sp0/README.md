@@ -9,6 +9,11 @@ not proof of RTM compatibility. PR #1 must not merge until the packaged guest
 validator passes on clean RTM virtual machines for every published
 architecture.
 
+Each build publishes two archives. Use the small `*-runtime.zip` archive for
+deployment. The larger `*-validation.zip` archive contains the guest validator,
+unpacked regression standard library, native test extensions, and pinned
+third-party package probes; it exists only for CI and clean-guest validation.
+
 ## Compatibility changes
 
 - `patches/0001-pre-kb2533623-dll-loading.patch` is applied before the
@@ -60,7 +65,7 @@ architecture.
   system queries on both architectures; and an RPyC protocol serialization
   round trip. RPyC-over-VMCI and other application integration remain outside
   these PRs.
-- The package carries an unoptimized validation copy of CPython's standard
+- The validation bundle carries an unoptimized copy of CPython's standard
   library and runs the Windows-facing `asyncio`, `_ctypes`, import,
   multiprocessing, path, filesystem, socket, SSL, subprocess, time, and
   registry groups on the host and again on the RTM guest. The normal smoke test
@@ -124,8 +129,8 @@ Package and audit it from PowerShell:
 ## Required RTM guest validation
 
 Take snapshots before installing service packs, Windows updates, Visual C++
-redistributables, Python, or VMware Tools. Copy only the produced ZIP into the
-guest, extract it, and run:
+redistributables, Python, or VMware Tools. Copy the produced
+`*-validation.zip` into the guest, extract it, and run:
 
 ```bat
 guest_validate.cmd

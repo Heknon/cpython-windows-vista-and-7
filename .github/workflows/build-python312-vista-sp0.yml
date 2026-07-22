@@ -108,11 +108,18 @@ jobs:
           & "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/validation-runner/python.exe"
           "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/rtm_regression.py"
 
-      - name: Upload embeddable package
+      - name: Upload lean runtime
         uses: actions/upload-artifact@v4
         with:
-          name: python-3.12.10-vista-sp0-${{ matrix.platform }}
-          path: artifacts/python-3.12.10-vista-sp0-*.zip
+          name: python-3.12.10-vista-sp0-${{ matrix.platform }}-runtime
+          path: artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}-runtime.zip
+          if-no-files-found: error
+
+      - name: Upload validation bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-3.12.10-vista-sp0-${{ matrix.platform }}-validation
+          path: artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}-validation.zip
           if-no-files-found: error
 
       - name: Upload unpacked validation bundle on failure

@@ -16,7 +16,9 @@ $buildArch = if ($Platform -eq "x64") { "amd64" } else { "win32" }
 $sdkArch = if ($Platform -eq "x64") { "x64" } else { "x86" }
 $buildDirectory = Join-Path $sourceRoot "PCbuild\$buildArch"
 $packageDirectory = Join-Path $OutputDirectory "python-3.12.10-vista-sp0-$sdkArch"
-$packageZip = "$packageDirectory.zip"
+$runtimeDirectory = "$packageDirectory-runtime"
+$runtimeZip = "$runtimeDirectory.zip"
+$validationZip = "$packageDirectory-validation.zip"
 $tempDirectory = Join-Path $env:RUNNER_TEMP "python-layout-$sdkArch"
 $runtimeHashes = Import-PowerShellDataFile (Join-Path $PSScriptRoot "RuntimeHashes.psd1")
 $expectedHashes = $runtimeHashes[$sdkArch]
@@ -40,6 +42,9 @@ function Test-ExpectedHash {
 New-Item -ItemType Directory -Force -Path $OutputDirectory | Out-Null
 if (Test-Path $packageDirectory) {
     Remove-Item -Recurse -Force $packageDirectory
+}
+if (Test-Path $runtimeDirectory) {
+    Remove-Item -Recurse -Force $runtimeDirectory
 }
 if (Test-Path $tempDirectory) {
     Remove-Item -Recurse -Force $tempDirectory
@@ -267,8 +272,69 @@ $manifest = [ordered]@{
 $manifest | ConvertTo-Json -Depth 4 | Set-Content `
     (Join-Path $packageDirectory "ARTIFACT-MANIFEST.json") -Encoding UTF8
 
-if (Test-Path $packageZip) {
-    Remove-Item -Force $packageZip
+# Keep the deployable archive lean.  The working package above intentionally
+# contains the complete guest validator, regression interpreter, and package
+# probes.  Copy it, strip only validation-owned payloads, and run the PE audit
+# again so removing a DLL that a shipping binary needs cannot produce a broken
+# runtime silently.
+Copy-Item $packageDirectory $runtimeDirectory -Recurse -Force
+
+$validationOnlyPaths = @(
+    "validation-packages"
+    "validation-runner"
+    "ARTIFACT-MANIFEST.json"
+    "THIRD-PARTY-REQUIREMENTS.txt"
+    "THIRD-PARTY-REQUIREMENTS-WIN32.txt"
+    "guest_validate.cmd"
+    "guest_validate.py"
+    "rtm_preflight.py"
+    "rtm_regression.py"
+    "smoke_test.py"
+    "third_party_smoke.py"
+    "msvcp140.dll"
+    "concrt140.dll"
+)
+foreach ($relativePath in $validationOnlyPaths) {
+    $path = Join-Path $runtimeDirectory $relativePath
+    if (Test-Path $path) {
+        Remove-Item $path -Recurse -Force
+    }
 }
-Compress-Archive -Path (Join-Path $packageDirectory "*") -DestinationPath $packageZip
-Write-Host "Created $packageZip"
+
+# Later stacked PRs add their own transport smoke tests.  Their runtime modules
+# remain, while files whose names identify them as tests do not ship.
+Get-ChildItem $runtimeDirectory -File -Filter "*_smoke_test.py" |
+    Remove-Item -Force
+
+$forbiddenRuntimePaths = @(
+    "validation-packages"
+    "validation-runner"
+    "guest_validate.cmd"
+    "rtm_regression.py"
+    "smoke_test.py"
+    "third_party_smoke.py"
+)
+foreach ($relativePath in $forbiddenRuntimePaths) {
+    if (Test-Path (Join-Path $runtimeDirectory $relativePath)) {
+        throw "Validation payload leaked into the runtime archive: $relativePath"
+    }
+}
+
+& (Join-Path $PSScriptRoot "Test-PeImports.ps1") -PackageDirectory $runtimeDirectory
+if ($LASTEXITCODE -ne 0) {
+    throw "Lean runtime PE dependency-closure audit failed with exit code $LASTEXITCODE."
+}
+Remove-Item (Join-Path $runtimeDirectory "PE-IMPORTS.json") -Force
+
+foreach ($archive in @($runtimeZip, $validationZip)) {
+    if (Test-Path $archive) {
+        Remove-Item -Force $archive
+    }
+}
+Compress-Archive -Path (Join-Path $runtimeDirectory "*") -DestinationPath $runtimeZip
+Compress-Archive -Path (Join-Path $packageDirectory "*") -DestinationPath $validationZip
+
+$runtimeSize = [Math]::Round((Get-Item $runtimeZip).Length / 1MB, 2)
+$validationSize = [Math]::Round((Get-Item $validationZip).Length / 1MB, 2)
+Write-Host "Created lean runtime: $runtimeZip ($runtimeSize MB)"
+Write-Host "Created validation bundle: $validationZip ($validationSize MB)"
