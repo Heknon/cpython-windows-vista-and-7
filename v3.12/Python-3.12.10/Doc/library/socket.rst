@@ -178,6 +178,10 @@ created.  Socket addresses are represented as follows:
   their hosts. The sockets are represented as a ``(CID, port)`` tuple
   where the context ID or CID and port are integers.
 
+  On Windows guests with the VMware VMCI Winsock provider,
+  :const:`AF_VSOCK` is a dynamic alias of :const:`AF_VMCI`. The two names are
+  present only when the provider is available while :mod:`socket` is imported.
+
   .. availability:: Linux >= 3.9
 
      See :manpage:`vsock(7)`
@@ -596,11 +600,30 @@ Constants
           VMADDR*
           SO_VM*
 
-   Constants for Linux host/guest communication.
+   Constants for Linux host/guest communication. On Windows VMware guests,
+   :const:`AF_VSOCK` is an alias of the dynamically assigned
+   :const:`AF_VMCI` value.
 
    .. availability:: Linux >= 4.8.
 
    .. versionadded:: 3.7
+
+.. data:: AF_VMCI
+          VMADDR_CID_ANY
+          VMADDR_PORT_ANY
+          VMADDR_CID_HYPERVISOR
+          VMADDR_CID_LOCAL
+          VMADDR_CID_HOST
+          SO_VMCI_BUFFER_SIZE
+          SO_VMCI_BUFFER_MIN_SIZE
+          SO_VMCI_BUFFER_MAX_SIZE
+
+   Constants for VMware VMCI host/guest communication on Windows.
+   ``AF_VMCI`` and its :const:`AF_VSOCK` alias are defined only when the VMCI
+   Winsock provider is available while the module is imported. VMCI addresses
+   are unsigned 32-bit ``(CID, port)`` pairs.
+
+   .. availability:: Windows with the VMware VMCI Winsock provider.
 
 .. data:: AF_LINK
 
@@ -717,9 +740,10 @@ The following functions all create :ref:`socket objects <socket-objects>`.
    Create a new socket using the given address family, socket type and protocol
    number.  The address family should be :const:`AF_INET` (the default),
    :const:`AF_INET6`, :const:`AF_UNIX`, :const:`AF_CAN`, :const:`AF_PACKET`,
-   or :const:`AF_RDS`. The socket type should be :const:`SOCK_STREAM` (the
-   default), :const:`SOCK_DGRAM`, :const:`SOCK_RAW` or perhaps one of the other
-   ``SOCK_`` constants. The protocol number is usually zero and may be omitted
+   :const:`AF_RDS`, or :const:`AF_VMCI`. The socket type should be
+   :const:`SOCK_STREAM` (the default), :const:`SOCK_DGRAM`, :const:`SOCK_RAW`
+   or perhaps one of the other ``SOCK_`` constants. The protocol number is
+   usually zero and may be omitted
    or in the case where the address family is :const:`AF_CAN` the protocol
    should be one of :const:`CAN_RAW`, :const:`CAN_BCM`, :const:`CAN_ISOTP` or
    :const:`CAN_J1939`.
@@ -903,6 +927,32 @@ The following functions all create :ref:`socket objects <socket-objects>`.
 
 Other functions
 '''''''''''''''
+
+.. function:: vmci_available()
+
+   Return :const:`True` when the Windows VMware VMCI device and Winsock
+   provider were available while :mod:`socket` was imported.
+
+   .. availability:: Windows.
+
+.. function:: vmci_address_family()
+
+   Query and return the address-family number assigned by the Windows VMware
+   VMCI driver. Raise :exc:`OSError` when the provider is unavailable.
+
+   .. availability:: Windows.
+
+.. function:: vmci_local_cid()
+
+   Query and return the current VMware VMCI context identifier.
+
+   .. availability:: Windows with the VMware VMCI Winsock provider.
+
+.. function:: vmci_version()
+
+   Return the packed version reported by the Windows VMware VMCI driver.
+
+   .. availability:: Windows with the VMware VMCI Winsock provider.
 
 The :mod:`socket` module also offers various network-related services:
 

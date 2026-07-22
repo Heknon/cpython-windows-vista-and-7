@@ -468,6 +468,63 @@ remove_unusable_flags(PyObject *m)
 
 #ifdef MS_WINDOWS
 #define SOCKETCLOSE closesocket
+
+#define VMCI_SOCKETS_DEVICE L"\\\\.\\VMCI"
+#define VMCI_SOCKETS_VERSION 0x81032058
+#define VMCI_SOCKETS_GET_AF_VALUE 0x81032068
+#define VMCI_SOCKETS_GET_LOCAL_CID 0x8103206c
+
+#define VMADDR_CID_ANY ((unsigned int)-1)
+#define VMADDR_PORT_ANY ((unsigned int)-1)
+
+static int vmci_address_family = -1;
+
+static int
+vmci_query(DWORD command, unsigned int *value, int report_error)
+{
+    HANDLE device;
+    DWORD bytes_returned = 0;
+    DWORD error = ERROR_SUCCESS;
+    BOOL ok;
+
+    *value = UINT_MAX;
+    device = CreateFileW(VMCI_SOCKETS_DEVICE, GENERIC_READ, 0, NULL,
+                         OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (device == INVALID_HANDLE_VALUE) {
+        error = GetLastError();
+        if (report_error) {
+            PyErr_SetFromWindowsErr((int)error);
+        }
+        return 0;
+    }
+
+    ok = DeviceIoControl(device, command, value, (DWORD)sizeof(*value), value,
+                         (DWORD)sizeof(*value), &bytes_returned, NULL);
+    if (!ok) {
+        error = GetLastError();
+    }
+    CloseHandle(device);
+
+    if (!ok || *value == UINT_MAX) {
+        if (report_error) {
+            PyErr_SetFromWindowsErr(
+                !ok ? (int)error : ERROR_NOT_SUPPORTED);
+        }
+        return 0;
+    }
+    return 1;
+}
+
+static int
+vmci_parse_uint32(PyObject *object, unsigned int *value)
+{
+    unsigned long parsed = PyLong_AsUnsignedLong(object);
+    if (parsed == (unsigned long)-1 && PyErr_Occurred()) {
+        return 0;
+    }
+    *value = (unsigned int)parsed;
+    return 1;
+}
 #endif
 
 #ifdef MS_WIN32
@@ -1622,6 +1679,20 @@ makesockaddr(SOCKET_T sockfd, struct sockaddr *addr, size_t addrlen, int proto)
         Py_RETURN_NONE;
     }
 
+#ifdef MS_WINDOWS
+    if (vmci_address_family >= 0 &&
+        addr->sa_family == vmci_address_family) {
+        const struct sockaddr_vm_py *a;
+        if (addrlen < sizeof(*a)) {
+            PyErr_SetString(PyExc_OSError,
+                            "Winsock returned a truncated VMCI address");
+            return NULL;
+        }
+        a = (const struct sockaddr_vm_py *)addr;
+        return Py_BuildValue("II", a->svm_cid, a->svm_port);
+    }
+#endif
+
     switch (addr->sa_family) {
 
     case AF_INET:
@@ -2011,6 +2082,40 @@ static int
 getsockaddrarg(PySocketSockObject *s, PyObject *args,
                sock_addr_t *addrbuf, int *len_ret, const char *caller)
 {
+#ifdef MS_WINDOWS
+    if (vmci_address_family >= 0 &&
+        s->sock_family == vmci_address_family) {
+        struct sockaddr_vm_py *addr = &addrbuf->vmci;
+        PyObject *cid_object;
+        PyObject *port_object;
+        unsigned int cid;
+        unsigned int port;
+
+        memset(addr, 0, sizeof(*addr));
+        if (!PyTuple_Check(args)) {
+            PyErr_Format(
+                PyExc_TypeError,
+                "%s(): AF_VMCI address must be tuple, not %.500s",
+                caller, Py_TYPE(args)->tp_name);
+            return 0;
+        }
+        if (!PyArg_ParseTuple(
+                args, "OO;AF_VMCI address must be a pair (cid, port)",
+                &cid_object, &port_object)) {
+            return 0;
+        }
+        if (!vmci_parse_uint32(cid_object, &cid) ||
+            !vmci_parse_uint32(port_object, &port)) {
+            return 0;
+        }
+        addr->svm_family = (unsigned short)vmci_address_family;
+        addr->svm_port = port;
+        addr->svm_cid = cid;
+        *len_ret = (int)sizeof(*addr);
+        return 1;
+    }
+#endif
+
     switch (s->sock_family) {
 
 #if defined(AF_UNIX)
@@ -2863,6 +2968,14 @@ getsockaddrarg(PySocketSockObject *s, PyObject *args,
 static int
 getsockaddrlen(PySocketSockObject *s, socklen_t *len_ret)
 {
+#ifdef MS_WINDOWS
+    if (vmci_address_family >= 0 &&
+        s->sock_family == vmci_address_family) {
+        *len_ret = (socklen_t)sizeof(struct sockaddr_vm_py);
+        return 1;
+    }
+#endif
+
     switch (s->sock_family) {
 
 #if defined(AF_UNIX)
@@ -7480,6 +7593,57 @@ range of values.");
 #endif    /* CMSG_SPACE */
 #endif    /* CMSG_LEN */
 
+#ifdef MS_WINDOWS
+static PyObject *
+socket_vmci_available(PyObject *Py_UNUSED(module),
+                      PyObject *Py_UNUSED(ignored))
+{
+    if (vmci_address_family >= 0) {
+        Py_RETURN_TRUE;
+    }
+    Py_RETURN_FALSE;
+}
+
+static PyObject *
+socket_vmci_get_address_family(PyObject *Py_UNUSED(module),
+                               PyObject *Py_UNUSED(ignored))
+{
+    unsigned int family;
+    if (!vmci_query(VMCI_SOCKETS_GET_AF_VALUE, &family, 1)) {
+        return NULL;
+    }
+    if (family > USHRT_MAX) {
+        PyErr_SetString(
+            PyExc_OSError,
+            "the VMCI driver returned an invalid address family");
+        return NULL;
+    }
+    return PyLong_FromUnsignedLong(family);
+}
+
+static PyObject *
+socket_vmci_get_local_cid(PyObject *Py_UNUSED(module),
+                          PyObject *Py_UNUSED(ignored))
+{
+    unsigned int cid;
+    if (!vmci_query(VMCI_SOCKETS_GET_LOCAL_CID, &cid, 1)) {
+        return NULL;
+    }
+    return PyLong_FromUnsignedLong(cid);
+}
+
+static PyObject *
+socket_vmci_get_version(PyObject *Py_UNUSED(module),
+                        PyObject *Py_UNUSED(ignored))
+{
+    unsigned int version;
+    if (!vmci_query(VMCI_SOCKETS_VERSION, &version, 1)) {
+        return NULL;
+    }
+    return PyLong_FromUnsignedLong(version);
+}
+#endif
+
 
 /* List of functions exported by this module. */
 
@@ -7573,6 +7737,16 @@ static PyMethodDef socket_methods[] = {
     {"CMSG_SPACE",              socket_CMSG_SPACE,
      METH_VARARGS, CMSG_SPACE_doc},
 #endif
+#endif
+#ifdef MS_WINDOWS
+    {"vmci_available", socket_vmci_available,
+     METH_NOARGS, "Return whether the VMware VMCI provider is available."},
+    {"vmci_address_family", socket_vmci_get_address_family,
+     METH_NOARGS, "Return the Windows VMCI address family."},
+    {"vmci_local_cid", socket_vmci_get_local_cid,
+     METH_NOARGS, "Return this VM's VMCI context ID."},
+    {"vmci_version", socket_vmci_get_version,
+     METH_NOARGS, "Return the packed VMware vSockets version."},
 #endif
     {NULL,                      NULL}            /* Sentinel */
 };
@@ -7682,6 +7856,17 @@ socket_exec(PyObject *m)
         goto error;
     }
 
+#ifdef MS_WINDOWS
+    {
+        unsigned int family;
+        vmci_address_family = -1;
+        if (vmci_query(VMCI_SOCKETS_GET_AF_VALUE, &family, 0) &&
+            family <= USHRT_MAX) {
+            vmci_address_family = (int)family;
+        }
+    }
+#endif
+
     socket_state *state = get_module_state(m);
     state->defaulttimeout = _PYTIME_FROMSECONDS(-1);
 
@@ -7771,6 +7956,20 @@ socket_exec(PyObject *m)
 
 #define ADD_STR_CONST(MOD, NAME, STR) do {                  \
     if (PyModule_AddStringConstant(MOD, NAME, STR) < 0) {   \
+        goto error;                                         \
+    }                                                       \
+} while (0)
+
+#define ADD_UINT_CONST(MOD, NAME, INT) do {                 \
+    PyObject *_vmci_constant = PyLong_FromUnsignedLong(     \
+        (unsigned long)(INT));                              \
+    if (_vmci_constant == NULL) {                           \
+        goto error;                                         \
+    }                                                       \
+    int _vmci_result = PyModule_AddObjectRef(               \
+        MOD, NAME, _vmci_constant);                         \
+    Py_DECREF(_vmci_constant);                              \
+    if (_vmci_result < 0) {                                 \
         goto error;                                         \
     }                                                       \
 } while (0)
@@ -7894,6 +8093,21 @@ socket_exec(PyObject *m)
     ADD_INT_CONST(m, "VMADDR_CID_HOST", 2);
     ADD_INT_CONST(m, "VM_SOCKETS_INVALID_VERSION", 0xffffffff);
     ADD_INT_CONST(m, "IOCTL_VM_SOCKETS_GET_LOCAL_CID",  _IO(7, 0xb9));
+#endif
+
+#ifdef MS_WINDOWS
+    if (vmci_address_family >= 0) {
+        ADD_INT_CONST(m, "AF_VMCI", vmci_address_family);
+        ADD_INT_CONST(m, "AF_VSOCK", vmci_address_family);
+    }
+    ADD_UINT_CONST(m, "VMADDR_CID_ANY", VMADDR_CID_ANY);
+    ADD_UINT_CONST(m, "VMADDR_PORT_ANY", VMADDR_PORT_ANY);
+    ADD_UINT_CONST(m, "VMADDR_CID_HYPERVISOR", 0);
+    ADD_UINT_CONST(m, "VMADDR_CID_LOCAL", 1);
+    ADD_UINT_CONST(m, "VMADDR_CID_HOST", 2);
+    ADD_INT_CONST(m, "SO_VMCI_BUFFER_SIZE", 0);
+    ADD_INT_CONST(m, "SO_VMCI_BUFFER_MIN_SIZE", 1);
+    ADD_INT_CONST(m, "SO_VMCI_BUFFER_MAX_SIZE", 2);
 #endif
 
 #ifdef AF_ROUTE
@@ -9180,6 +9394,7 @@ socket_exec(PyObject *m)
 
 #undef ADD_INT_MACRO
 #undef ADD_INT_CONST
+#undef ADD_UINT_CONST
 #undef ADD_STR_CONST
 
     return 0;

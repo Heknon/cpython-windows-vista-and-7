@@ -266,6 +266,17 @@ typedef int SOCKET_T;
 #  define HAVE_AF_HYPERV
 #endif
 
+#ifdef MS_WINDOWS
+/* VMware assigns the Windows VMCI address family dynamically. */
+struct sockaddr_vm_py {
+    unsigned short svm_family;
+    unsigned short svm_reserved1;
+    unsigned int svm_port;
+    unsigned int svm_cid;
+    unsigned char svm_zero[4];
+};
+#endif
+
 /* Socket address */
 typedef union sock_addr {
     struct sockaddr_in in;
@@ -292,6 +303,9 @@ typedef union sock_addr {
     struct sockaddr_hci bt_hci;
 #elif defined(MS_WINDOWS)
     struct SOCKADDR_BTH_REDEF bt_rc;
+#endif
+#ifdef MS_WINDOWS
+    struct sockaddr_vm_py vmci;
 #endif
 #ifdef HAVE_NETPACKET_PACKET_H
     struct sockaddr_ll ll;

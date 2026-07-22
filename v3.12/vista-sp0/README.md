@@ -139,6 +139,26 @@ The address family is deliberately queried from `\\.\VMCI`; it is not a stable
 compile-time constant on Windows. The device query is synchronous, and the
 wrapper preserves blocking, nonblocking, and finite connect-timeout behavior.
 
+The native-socket integration branch also exposes that dynamic family through
+the standard library as both `socket.AF_VMCI` and the cross-platform
+`socket.AF_VSOCK` alias. These names are present only when the VMCI driver is
+available at `_socket` import time. `bind`, `connect`, `accept`, `getsockname`,
+`getpeername`, `sendto`, and `recvfrom` then accept or return normal
+`(cid, port)` tuples:
+
+```python
+import socket
+
+with socket.socket(socket.AF_VMCI, socket.SOCK_STREAM) as listener:
+    listener.bind((socket.VMADDR_CID_ANY, 18861))
+    listener.listen()
+    connection, peer = listener.accept()
+```
+
+The standard module also provides `vmci_available()`, `vmci_local_cid()`,
+`vmci_version()`, and the VMware CID/port constants. Standard socket timeout
+and nonblocking connection handling work unchanged.
+
 Start a normal VMCI listener with:
 
 ```python
@@ -196,6 +216,15 @@ cover family/CID discovery, ephemeral bind, listen, accept timeout, same-guest
 connect/accept, bidirectional transfer, finite connect timeout, and repeated
 close/rebind. The positive test uses two sockets in the guest; a successful
 bind alone is not sufficient.
+
+## Required VMware validation for PR #3
+
+Run the same package and guest matrix after the native `_socket` integration is
+applied. The positive smoke test must pass its standard-library stream round
+trip, nonblocking `connect_ex`, strict unsigned address rejection, datagram
+`sendto`/`recvfrom`, and the ordinary AF_INET checks inherited from
+`smoke_test.py`. Require Vista RTM and Windows 7 RTM results for both x86 and
+x64 before merging the native integration.
 
 ## Why `exit()` is undefined
 
