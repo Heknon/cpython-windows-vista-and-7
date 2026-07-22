@@ -80,6 +80,9 @@ third-party package probes; it exists only for CI and clean-guest validation.
   under `validation-runner` expose the source library and test-only native
   modules to regression subprocesses without changing the shipping
   `python.exe` path configuration.
+- `_vmci.pyd` supplies VMware vSockets address operations without modifying
+  CPython's standard `_socket` module. Its Python wrapper delegates stream I/O
+  and handle ownership to the standard `socket.socket` implementation.
 
 For an assembled application, list any application-specific modules that must
 import successfully in `RTM-SMOKE-MODULES.txt`, one dotted module name per line.
@@ -118,6 +121,8 @@ C++ tools, and the Windows 7.1A SDK. Then run:
 git apply v3.12\vista-sp0\patches\0001-pre-kb2533623-dll-loading.patch
 set PATCHDIR=C:\src\cpython-windows-vista-and-7\v3.12\Python-3.12.10\api-ms-win-core-path-HACK
 v3.12\Python-3.12.10\PCbuild\build.bat -p x64 -c Release "/p:PlatformToolset=v141_xp" "/p:VCToolsVersion=14.16.27023" "/p:WindowsTargetPlatformVersion=7.0"
+set V141_TOOLS_VERSION=14.16.27023
+powershell -File v3.12\vista-sp0\Build-VmciExtension.ps1 -Platform x64
 ```
 
 Package and audit it from PowerShell:
@@ -125,6 +130,28 @@ Package and audit it from PowerShell:
 ```powershell
 ./v3.12/vista-sp0/New-EmbedPackage.ps1 -Platform x64 -OutputDirectory ./artifacts
 ```
+
+## VMCI
+
+The build does not require the VMware SDK. At runtime the guest must have a
+VMware Tools installation that exposes the VMCI device and Winsock provider.
+The address family is deliberately queried from `\\.\VMCI`; it is not a stable
+compile-time constant on Windows. The device query is synchronous, and the
+wrapper preserves blocking, nonblocking, and finite connect-timeout behavior.
+
+Start a normal VMCI listener with:
+
+```python
+import vmci
+
+with vmci.socket() as listener:
+    listener.bind((vmci.VMADDR_CID_ANY, 18861))
+    listener.listen()
+    connection, peer = listener.accept()
+```
+
+RPyC integration is intentionally outside this PR. Validate the VMCI transport
+first; an optional third-party server adapter can be reviewed separately.
 
 ## Required RTM guest validation
 
@@ -156,6 +183,19 @@ VMCI socket behavior and VMware Tools installation belong to the VMCI PR, not
 this CPython-runtime PR. PR #1 only needs a hypervisor-neutral clean-guest
 Python result. Do not install VMware Tools merely to copy the artifact; use an
 ISO or another method that does not modify the guest runtime.
+
+## Required VMware validation for PR #2
+
+Run the clean PR #1 validation first. Then revert or clone the same RTM guest,
+install a VMware Tools version that supports that guest architecture and
+exposes the VMCI Winsock provider, and run `vmci_smoke_test.py`.
+
+Hosted Actions proves only that `_vmci.pyd` loads when no VMCI device exists.
+Before merging PR #2, preserve positive results from Vista RTM x86 and x64 that
+cover family/CID discovery, ephemeral bind, listen, accept timeout, connect,
+accept, bidirectional transfer, nonblocking operation, finite connect timeout,
+and repeated close/rebind. A host or second endpoint is required for the full
+transport test; a successful bind alone is not sufficient.
 
 ## Why `exit()` is undefined
 
