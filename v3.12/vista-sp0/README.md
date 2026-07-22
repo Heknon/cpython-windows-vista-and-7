@@ -192,10 +192,10 @@ exposes the VMCI Winsock provider, and run `vmci_smoke_test.py`.
 
 Hosted Actions proves only that `_vmci.pyd` loads when no VMCI device exists.
 Before merging PR #2, preserve positive results from Vista RTM x86 and x64 that
-cover family/CID discovery, ephemeral bind, listen, accept timeout, connect,
-accept, bidirectional transfer, nonblocking operation, finite connect timeout,
-and repeated close/rebind. A host or second endpoint is required for the full
-transport test; a successful bind alone is not sufficient.
+cover family/CID discovery, ephemeral bind, listen, accept timeout, same-guest
+connect/accept, bidirectional transfer, finite connect timeout, and repeated
+close/rebind. The positive test uses two sockets in the guest; a successful
+bind alone is not sufficient.
 
 ## Why `exit()` is undefined
 
