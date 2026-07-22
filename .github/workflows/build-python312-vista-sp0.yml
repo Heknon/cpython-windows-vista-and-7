@@ -86,6 +86,10 @@ jobs:
           "/p:VistaEmbedOnly=true"
           "/p:IncludeTests=true"
 
+      - name: Build Windows VMCI extension
+        shell: pwsh
+        run: ./v3.12/vista-sp0/Build-VmciExtension.ps1 -Platform ${{ matrix.platform }}
+
       - name: Create and audit app-local embeddable package
         shell: pwsh
         run: >-
@@ -107,6 +111,12 @@ jobs:
         run: >-
           & "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/validation-runner/python.exe"
           "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/rtm_regression.py"
+
+      - name: Test VMCI extension loading
+        shell: pwsh
+        run: >-
+          & "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/python.exe"
+          "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/vmci_smoke_test.py"
 
       - name: Upload lean runtime
         uses: actions/upload-artifact@v4

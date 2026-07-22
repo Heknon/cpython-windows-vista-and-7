@@ -253,6 +253,13 @@ if ($LASTEXITCODE -ne 0) {
     throw "Installing third-party validation packages failed with exit code $LASTEXITCODE."
 }
 
+# Add VMCI support before auditing and manifest generation so the extension is
+# covered by the same dependency-closure and artifact-integrity checks.
+$vmciDirectory = Join-Path $PSScriptRoot "vmci"
+Copy-Item (Join-Path $buildDirectory "_vmci.pyd") $packageDirectory -Force
+Copy-Item (Join-Path $vmciDirectory "vmci.py") $packageDirectory -Force
+Copy-Item (Join-Path $PSScriptRoot "vmci_smoke_test.py") $packageDirectory -Force
+
 & (Join-Path $PSScriptRoot "Test-PeImports.ps1") -PackageDirectory $packageDirectory
 if ($LASTEXITCODE -ne 0) {
     throw "PE dependency-closure audit failed with exit code $LASTEXITCODE."
