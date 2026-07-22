@@ -1,0 +1,5 @@
+LIBRARY api-ms-win-core-path-l1-1-0.dll
+EXPORTS
+    "_PathCchCombineEx@20"=PathCchCombineEx
+    "_PathCchRemoveFileSpec@4"=PathCchRemoveFileSpec
+    "_PathCchSkipRoot@8"=PathCchSkipRoot

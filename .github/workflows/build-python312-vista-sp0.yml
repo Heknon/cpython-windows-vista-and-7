@@ -1,0 +1,131 @@
+name: Build Python 3.12 for Vista SP0
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "v3.12/**"
+      - ".github/workflows/build-python312-vista-sp0.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build ${{ matrix.platform }}
+    runs-on: windows-2022
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: x64
+            package_arch: x64
+          - platform: Win32
+            package_arch: x86
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Configure package assembly Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Configure MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Install Vista-compatible v141_xp toolset
+        shell: pwsh
+        run: ./v3.12/vista-sp0/Install-V140Toolset.ps1
+
+      - name: Apply Vista SP0 compatibility patch
+        shell: pwsh
+        run: |
+          git apply --check ./v3.12/vista-sp0/patches/0001-pre-kb2533623-dll-loading.patch
+          git apply ./v3.12/vista-sp0/patches/0001-pre-kb2533623-dll-loading.patch
+
+      - name: Audit legacy DLL-loading paths
+        shell: pwsh
+        run: ./v3.12/vista-sp0/Test-LegacySource.ps1
+
+      - name: Create legacy SDK import library
+        shell: pwsh
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $installPath = & $vswhere -latest -products * -property installationPath
+          $lib = Get-ChildItem $installPath -Filter "lib.exe" -File -Recurse |
+            Where-Object { $_.FullName -match "Hostx64\\x64" } |
+            Select-Object -First 1
+          if (!$lib) { throw "lib.exe was not found." }
+          $compatLib = "${{ runner.temp }}\vista-compat-lib"
+          foreach ($target in @(
+            @{ Directory = "Win32"; Machine = "X86"; Definition = "pathcch-win32.def" },
+            @{ Directory = "x64"; Machine = "X64"; Definition = "pathcch.def" }
+          )) {
+            $targetDirectory = Join-Path $compatLib $target.Directory
+            New-Item -ItemType Directory -Force -Path $targetDirectory | Out-Null
+            $definition = Join-Path "${{ github.workspace }}\v3.12\vista-sp0" $target.Definition
+            & $lib.FullName /nologo "/def:$definition" "/machine:$($target.Machine)" "/out:$targetDirectory\pathcch.lib"
+            if ($LASTEXITCODE -ne 0) { throw "Creating $($target.Directory) pathcch.lib failed." }
+          }
+
+      - name: Build CPython
+        shell: cmd
+        env:
+          PATCHDIR: ${{ github.workspace }}\v3.12\Python-3.12.10\api-ms-win-core-path-HACK
+        run: >-
+          v3.12\Python-3.12.10\PCbuild\build.bat
+          -p ${{ matrix.platform }}
+          -c Release
+          "/p:PlatformToolset=v141_xp"
+          "/p:VCToolsVersion=%V141_TOOLS_VERSION%"
+          "/p:WindowsTargetPlatformVersion=7.0"
+          "/p:VistaCompatLibDir=${{ runner.temp }}\vista-compat-lib"
+          "/p:VistaEmbedOnly=true"
+          "/p:IncludeTests=true"
+
+      - name: Create and audit app-local embeddable package
+        shell: pwsh
+        run: >-
+          ./v3.12/vista-sp0/New-EmbedPackage.ps1
+          -Platform ${{ matrix.platform }}
+          -OutputDirectory "${{ github.workspace }}/artifacts"
+
+      - name: Run smoke tests on the build host
+        shell: pwsh
+        run: |
+          $package = "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}"
+          & "$package/python.exe" "$package/smoke_test.py"
+          if ($LASTEXITCODE -ne 0) { throw "CPython smoke tests failed." }
+          & "$package/python.exe" "$package/third_party_smoke.py"
+          if ($LASTEXITCODE -ne 0) { throw "Third-party package smoke tests failed." }
+
+      - name: Run compatibility regression groups on the build host
+        shell: pwsh
+        run: >-
+          & "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/validation-runner/python.exe"
+          "${{ github.workspace }}/artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/rtm_regression.py"
+
+      - name: Upload lean runtime
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-3.12.10-vista-sp0-${{ matrix.platform }}-runtime
+          path: artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}-runtime.zip
+          if-no-files-found: error
+
+      - name: Upload validation bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-3.12.10-vista-sp0-${{ matrix.platform }}-validation
+          path: artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}-validation.zip
+          if-no-files-found: error
+
+      - name: Upload unpacked validation bundle on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-3.12.10-vista-sp0-${{ matrix.platform }}-diagnostics
+          path: artifacts/python-3.12.10-vista-sp0-${{ matrix.package_arch }}/
+          if-no-files-found: ignore

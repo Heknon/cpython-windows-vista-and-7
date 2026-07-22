@@ -1,0 +1,692 @@
+diff --git a/v3.12/Python-3.12.10/PC/pyconfig.h b/v3.12/Python-3.12.10/PC/pyconfig.h
+index 2f54e1c..94c5a0a 100644
+--- a/v3.12/Python-3.12.10/PC/pyconfig.h
++++ b/v3.12/Python-3.12.10/PC/pyconfig.h
+@@ -73,6 +73,10 @@
+ #endif
+ 
+ #if defined(Py_BUILD_CORE) || defined(Py_BUILD_CORE_BUILTIN) || defined(Py_BUILD_CORE_MODULE)
++#ifdef PY_VISTA_LEGACY_SDK
++#define MS_WINDOWS_DESKTOP
++#define HAVE_WINDOWS_CONSOLE_IO 1
++#else
+ #include <winapifamily.h>
+ 
+ #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+@@ -92,6 +96,7 @@
+ #if defined(MS_WINDOWS_DESKTOP) || defined(MS_WINDOWS_APP) || defined(MS_WINDOWS_SYSTEM)
+ #define HAVE_WINDOWS_CONSOLE_IO 1
+ #endif
++#endif /* PY_VISTA_LEGACY_SDK */
+ #endif /* Py_BUILD_CORE || Py_BUILD_CORE_BUILTIN || Py_BUILD_CORE_MODULE */
+ 
+ /* Compiler specific defines */
+@@ -161,9 +161,9 @@ typedef int ssize_t;
+ #endif /* MS_WIN64 */
+ 
+ /* set the version macros for the windows headers */
+-/* Python 3.12+ requires Windows 8.1 or greater */
+-#define Py_WINVER 0x0603 /* _WIN32_WINNT_WINBLUE (8.1) */
+-#define Py_NTDDI NTDDI_WINBLUE
++/* This compatibility build deliberately targets Windows Vista. */
++#define Py_WINVER 0x0600 /* _WIN32_WINNT_VISTA */
++#define Py_NTDDI NTDDI_VISTA
+ 
+ /* We only set these values when building Python - we don't want to force
+    these values on extensions, as that will affect the prototypes and
+diff --git a/v3.12/Python-3.12.10/PCbuild/pyproject.props b/v3.12/Python-3.12.10/PCbuild/pyproject.props
+index 1576e44..5d81b5d 100644
+--- a/v3.12/Python-3.12.10/PCbuild/pyproject.props
++++ b/v3.12/Python-3.12.10/PCbuild/pyproject.props
+@@ -39,7 +39,7 @@
+   <ItemDefinitionGroup>
+     <ClCompile>
+-      <AdditionalIncludeDirectories>$(PySourcePath)Include;$(PySourcePath)Include\internal;$(PySourcePath)PC;$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+-      <PreprocessorDefinitions>WIN32;$(_Py3NamePreprocessorDefinition);$(_PlatformPreprocessorDefinition)$(_DebugPreprocessorDefinition)$(_PydPreprocessorDefinition)%(PreprocessorDefinitions)</PreprocessorDefinitions>
++      <AdditionalIncludeDirectories>$(PySourcePath)..\vista-sp0\include;$(PySourcePath)Include;$(PySourcePath)Include\internal;$(PySourcePath)PC;$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
++      <PreprocessorDefinitions>PY_VISTA_LEGACY_SDK;WINVER=0x0600;_WIN32_WINNT=0x0600;NTDDI_VERSION=NTDDI_VISTA;WIN32;$(_Py3NamePreprocessorDefinition);$(_PlatformPreprocessorDefinition)$(_DebugPreprocessorDefinition)$(_PydPreprocessorDefinition)%(PreprocessorDefinitions)</PreprocessorDefinitions>
+ 
+       <Optimization>MaxSpeed</Optimization>
+       <IntrinsicFunctions>true</IntrinsicFunctions>
+@@ -69,7 +69,7 @@
+       <FloatingPointModel>Strict</FloatingPointModel>
+     </ClCompile>
+     <Link>
+-      <AdditionalLibraryDirectories>$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
++      <AdditionalLibraryDirectories>$(VistaCompatLibDir)\$(Platform);$(OutDir);%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+       <GenerateDebugInformation>true</GenerateDebugInformation>
+       <ProgramDatabaseFile>$(OutDir)$(TargetName).pdb</ProgramDatabaseFile>
+       <SubSystem>Windows</SubSystem>
+diff --git a/v3.12/Python-3.12.10/Include/internal/pycore_fileutils_windows.h b/v3.12/Python-3.12.10/Include/internal/pycore_fileutils_windows.h
+index e82e740..5882ea9 100644
+--- a/v3.12/Python-3.12.10/Include/internal/pycore_fileutils_windows.h
++++ b/v3.12/Python-3.12.10/Include/internal/pycore_fileutils_windows.h
+@@ -8,6 +8,10 @@ extern "C" {
+ 
+ #ifdef MS_WINDOWS
+ 
++#ifdef PY_VISTA_LEGACY_SDK
++#  include <pathcch.h>
++#endif
++
+ #if !defined(NTDDI_WIN10_NI) || !(NTDDI_VERSION >= NTDDI_WIN10_NI)
+ typedef struct _FILE_STAT_BASIC_INFORMATION {
+     LARGE_INTEGER FileId;
+diff --git a/v3.12/Python-3.12.10/Modules/socketmodule.h b/v3.12/Python-3.12.10/Modules/socketmodule.h
+index a84f4a1..5bd467a 100644
+--- a/v3.12/Python-3.12.10/Modules/socketmodule.h
++++ b/v3.12/Python-3.12.10/Modules/socketmodule.h
+@@ -89,6 +89,9 @@ typedef int socklen_t;
+ typedef int socklen_t;
+ # endif /* IPPROTO_IPV6 */
+ 
++# ifdef PY_VISTA_LEGACY_SDK
++#  undef AF_HYPERV
++# else
+ /* Remove ifdef once Py_WINVER >= 0x0604
+  * socket.h only defines AF_HYPERV if _WIN32_WINNT is at that level or higher
+  * so for now it's just manually defined.
+@@ -97,6 +100,7 @@ typedef int socklen_t;
+ #  define AF_HYPERV 34
+ # endif
+ # include <hvsocket.h>
++# endif /* PY_VISTA_LEGACY_SDK */
+ #endif /* MS_WINDOWS */
+ 
+ #ifdef HAVE_SYS_UN_H
+diff --git a/v3.12/Python-3.12.10/Modules/posixmodule.c b/v3.12/Python-3.12.10/Modules/posixmodule.c
+index 97914ad..afb6b74 100644
+--- a/v3.12/Python-3.12.10/Modules/posixmodule.c
++++ b/v3.12/Python-3.12.10/Modules/posixmodule.c
+@@ -4656,5 +4656,8 @@ os__path_isdevdrive_impl(PyObject *module, path_t *path)
+ /*[clinic end generated code: output=1f437ea6677433a2 input=ee83e4996a48e23d]*/
+ {
++#ifdef PY_VISTA_LEGACY_SDK
++    Py_RETURN_FALSE;
++#else
+ #ifndef PERSISTENT_VOLUME_STATE_DEV_VOLUME
+     /* This flag will be documented at
+        https://learn.microsoft.com/windows-hardware/drivers/ddi/ntifs/ns-ntifs-_file_fs_persistent_volume_information
+@@ -4728,6 +4731,7 @@ os__path_isdevdrive_impl(PyObject *module, path_t *path)
+     }
+ 
+     return NULL;
++#endif /* PY_VISTA_LEGACY_SDK */
+ }
+ 
+ 
+@@ -8834,6 +8838,7 @@ os_setpgrp_impl(PyObject *module)
+ 
+ #ifdef MS_WINDOWS
+ #include <tlhelp32.h>
++#ifndef PY_VISTA_LEGACY_SDK
+ #include <processsnapshot.h>
+ 
+ static INIT_ONCE g_InitOnce = INIT_ONCE_STATIC_INIT;
+@@ -8859,10 +8864,12 @@ static BOOL CALLBACK Py_ProcessSnapshot_Init(PINIT_ONCE InitOnce, PVOID Paramet
+     }
+     return TRUE;
+ }
++#endif /* PY_VISTA_LEGACY_SDK */
+ 
+ static PyObject*
+ win32_getppid(void)
+ {
++#ifndef PY_VISTA_LEGACY_SDK
+     InitOnceExecuteOnce(&g_InitOnce, Py_ProcessSnapshot_Init, NULL, NULL);
+     if (Py_PssCaptureSnapshot) {
+         DWORD error;
+@@ -8886,7 +8893,10 @@ win32_getppid(void)
+ 
+         Py_PssFreeSnapshot(process, snapshot);
+         return result;
+-    } else {
++    }
++    else
++#endif /* PY_VISTA_LEGACY_SDK */
++    {
+         HANDLE snapshot;
+         pid_t mypid;
+         PyObject* result = NULL;
+@@ -15815,15 +15815,30 @@ static PyObject *
+ os__add_dll_directory_impl(PyObject *module, path_t *path)
+ /*[clinic end generated code: output=80b025daebb5d683 input=1de3e6c13a5808c8]*/
+ {
++    typedef DLL_DIRECTORY_COOKIE (WINAPI *AddDllDirectoryFunc)(PCWSTR);
+     DLL_DIRECTORY_COOKIE cookie = 0;
+     DWORD err = 0;
++    HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
++    AddDllDirectoryFunc add_dll_directory = NULL;
+ 
+     if (PySys_Audit("os.add_dll_directory", "(O)", path->object) < 0) {
+         return NULL;
+     }
+ 
++    if (kernel32 != NULL) {
++        add_dll_directory = (AddDllDirectoryFunc)GetProcAddress(
++            kernel32, "AddDllDirectory");
++    }
++    if (add_dll_directory == NULL) {
++        PyErr_SetString(
++            PyExc_NotImplementedError,
++            "os.add_dll_directory requires KB2533623 on this version "
++            "of Windows");
++        return NULL;
++    }
++
+     Py_BEGIN_ALLOW_THREADS
+-    if (!(cookie = AddDllDirectory(path->wide))) {
++    if (!(cookie = add_dll_directory(path->wide))) {
+         err = GetLastError();
+     }
+     Py_END_ALLOW_THREADS
+@@ -15852,8 +15867,11 @@ static PyObject *
+ os__remove_dll_directory_impl(PyObject *module, PyObject *cookie)
+ /*[clinic end generated code: output=594350433ae535bc input=c1d16a7e7d9dc5dc]*/
+ {
++    typedef BOOL (WINAPI *RemoveDllDirectoryFunc)(DLL_DIRECTORY_COOKIE);
+     DLL_DIRECTORY_COOKIE cookieValue;
+     DWORD err = 0;
++    HMODULE kernel32;
++    RemoveDllDirectoryFunc remove_dll_directory;
+ 
+     if (!PyCapsule_IsValid(cookie, "DLL directory cookie")) {
+         PyErr_SetString(PyExc_TypeError,
+@@ -15864,8 +15882,22 @@ os__remove_dll_directory_impl(PyObject *module, PyObject *cookie)
+     cookieValue = (DLL_DIRECTORY_COOKIE)PyCapsule_GetPointer(
+         cookie, "DLL directory cookie");
+ 
++    kernel32 = GetModuleHandleW(L"kernel32.dll");
++    remove_dll_directory = NULL;
++    if (kernel32 != NULL) {
++        remove_dll_directory = (RemoveDllDirectoryFunc)GetProcAddress(
++            kernel32, "RemoveDllDirectory");
++    }
++    if (remove_dll_directory == NULL) {
++        PyErr_SetString(
++            PyExc_NotImplementedError,
++            "os.remove_dll_directory requires KB2533623 on this version "
++            "of Windows");
++        return NULL;
++    }
++
+     Py_BEGIN_ALLOW_THREADS
+-    if (!RemoveDllDirectory(cookieValue)) {
++    if (!remove_dll_directory(cookieValue)) {
+         err = GetLastError();
+     }
+     Py_END_ALLOW_THREADS
+diff --git a/v3.12/Python-3.12.10/Lib/os.py b/v3.12/Python-3.12.10/Lib/os.py
+index 465742d..ae9b0b5 100644
+--- a/v3.12/Python-3.12.10/Lib/os.py
++++ b/v3.12/Python-3.12.10/Lib/os.py
+@@ -1125,4 +1125,104 @@ class PathLike(abc.ABC):
+ if name == 'nt':
++    # Windows Vista and Windows 7 without KB2533623 do not provide
++    # AddDllDirectory/RemoveDllDirectory.  Keep their directories in a
++    # process-local PATH prefix so the legacy LoadLibraryEx fallbacks used by
++    # extension imports and ctypes can still resolve dependencies.  The GIL
++    # serializes updates to this list.
++    _legacy_dll_directories = []
++    _legacy_dll_path_entries = ()
++    _legacy_dll_path_originally_missing = False
++
++    def _legacy_path_key(entry):
++        return path.normcase(path.normpath(entry))
++
++    def _strip_legacy_dll_path_entries(entries):
++        managed = _legacy_dll_path_entries
++        if not managed or len(entries) < len(managed):
++            return entries
++
++        managed_keys = tuple(_legacy_path_key(entry) for entry in managed)
++        entry_keys = tuple(_legacy_path_key(entry) for entry in entries)
++        limit = len(entries) - len(managed) + 1
++        for index in range(limit):
++            if entry_keys[index:index + len(managed)] == managed_keys:
++                return entries[:index] + entries[index + len(managed):]
++        return entries
++
++    def _refresh_legacy_dll_path():
++        global _legacy_dll_path_entries
++
++        current = environ.get('PATH', '')
++        entries = current.split(pathsep) if current else []
++        entries = _strip_legacy_dll_path_entries(entries)
++        managed = tuple(
++            directory for _, directory in reversed(_legacy_dll_directories)
++        )
++        combined = list(managed) + entries
++        if combined or not (_legacy_dll_path_originally_missing and
++                            not _legacy_dll_directories):
++            environ['PATH'] = pathsep.join(combined)
++        else:
++            environ.pop('PATH', None)
++        _legacy_dll_path_entries = managed
++
++    def _legacy_add_dll_directory(directory):
++        import nt
++
++        directory = fspath(directory)
++        if isinstance(directory, bytes):
++            directory = fsdecode(directory)
++        directory = nt._getfullpathname(directory)
++        if pathsep in directory:
++            raise ValueError(
++                "legacy DLL directory paths cannot contain {!r}".format(pathsep)
++            )
++        if not path.isdir(directory):
++            raise FileNotFoundError(
++                2, "The system cannot find the path specified", directory
++            )
++
++        global _legacy_dll_path_originally_missing
++
++        token = object()
++        first_entry = not _legacy_dll_directories
++        if first_entry:
++            _legacy_dll_path_originally_missing = 'PATH' not in environ
++        _legacy_dll_directories.append((token, directory))
++        try:
++            _refresh_legacy_dll_path()
++        except BaseException:
++            _legacy_dll_directories.pop()
++            try:
++                _refresh_legacy_dll_path()
++            finally:
++                if first_entry:
++                    _legacy_dll_path_originally_missing = False
++            raise
++        return _AddedDllDirectory(
++            directory,
++            token,
++            _legacy_remove_dll_directory
++        )
++
++    def _legacy_remove_dll_directory(token):
++        global _legacy_dll_path_originally_missing
++
++        for index, (candidate, _) in enumerate(_legacy_dll_directories):
++            if candidate is token:
++                removed = _legacy_dll_directories.pop(index)
++                try:
++                    _refresh_legacy_dll_path()
++                except BaseException:
++                    _legacy_dll_directories.insert(index, removed)
++                    _refresh_legacy_dll_path()
++                    raise
++                if not _legacy_dll_directories:
++                    _legacy_dll_path_originally_missing = False
++                return
++        raise TypeError(
++            "Provided cookie was not returned from os.add_dll_directory"
++        )
++
+     class _AddedDllDirectory:
+         def __init__(self, path, cookie, remove_dll_directory):
+             self.path = path
+@@ -1151,7 +1251,10 @@ if name == 'nt':
+         using it in a with statement.
+         """
+         import nt
+-        cookie = nt._add_dll_directory(path)
++        try:
++            cookie = nt._add_dll_directory(path)
++        except NotImplementedError:
++            return _legacy_add_dll_directory(path)
+         return _AddedDllDirectory(
+             path,
+             cookie,
+diff --git a/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c b/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c
+--- a/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c
++++ b/v3.12/Python-3.12.10/Modules/_ctypes/callproc.c
+@@ -66,5 +66,13 @@
+ #ifdef MS_WIN32
+ #include <windows.h>
++#ifdef PY_VISTA_LEGACY_SDK
++#ifndef LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR
++#define LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR 0x00000100
++#endif
++#ifndef LOAD_LIBRARY_SEARCH_DEFAULT_DIRS
++#define LOAD_LIBRARY_SEARCH_DEFAULT_DIRS 0x00001000
++#endif
++#endif /* PY_VISTA_LEGACY_SDK */
+ #include <tchar.h>
+ #else
+ #include <dlfcn.h>
+@@ -1364,6 +1364,10 @@
+     int load_flags = 0;
+     HMODULE hMod;
+     DWORD err;
++#ifdef PY_VISTA_LEGACY_SDK
++    DWORD legacy_flags = 0;
++    BOOL retry_with_legacy_flags = FALSE;
++#endif
+ 
+     if (!PyArg_ParseTuple(args, "U|i:LoadLibrary", &nameobj, &load_flags))
+         return NULL;
+@@ -1382,6 +1386,34 @@
+      */
+     hMod = LoadLibraryExW(name, NULL, (DWORD)load_flags);
+     err = hMod ? 0 : GetLastError();
++#ifdef PY_VISTA_LEGACY_SDK
++    /* LOAD_LIBRARY_SEARCH_* is unavailable before KB2533623.  ctypes uses
++     * these two modes by default, so map only those exact combinations to
++     * their closest RTM equivalents.  Do not hide ERROR_INVALID_PARAMETER
++     * for arbitrary caller-supplied winmode values.
++     */
++    if (err == ERROR_INVALID_PARAMETER) {
++        HMODULE kernel32 = GetModuleHandleW(L"kernel32.dll");
++        BOOL has_kb2533623 = kernel32 != NULL &&
++            GetProcAddress(kernel32, "AddDllDirectory") != NULL;
++
++        if (!has_kb2533623) {
++            if ((DWORD)load_flags == LOAD_LIBRARY_SEARCH_DEFAULT_DIRS) {
++                retry_with_legacy_flags = TRUE;
++            }
++            else if ((DWORD)load_flags ==
++                     (LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
++                      LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR)) {
++                legacy_flags = LOAD_WITH_ALTERED_SEARCH_PATH;
++                retry_with_legacy_flags = TRUE;
++            }
++        }
++    }
++    if (retry_with_legacy_flags) {
++        hMod = LoadLibraryExW(name, NULL, legacy_flags);
++        err = hMod ? 0 : GetLastError();
++    }
++#endif /* PY_VISTA_LEGACY_SDK */
+     Py_END_ALLOW_THREADS
+ 
+     PyMem_Free(name);
+diff --git a/v3.12/Python-3.12.10/Python/dynload_win.c b/v3.12/Python-3.12.10/Python/dynload_win.c
+index acab05e..5c18ece 100644
+--- a/v3.12/Python-3.12.10/Python/dynload_win.c
++++ b/v3.12/Python-3.12.10/Python/dynload_win.c
+@@ -14,6 +14,29 @@
+ #include "patchlevel.h"
+ #include <windows.h>
++#include <pathcch.h>
+ 
++/*
++ * LOAD_LIBRARY_SEARCH_* flags were added to Vista and Windows 7 by
++ * KB2533623.  On an unpatched system LoadLibraryExW() rejects those flags
++ * with ERROR_INVALID_PARAMETER.  The module path passed by the import
++ * machinery is absolute, so LOAD_WITH_ALTERED_SEARCH_PATH is the closest
++ * pre-KB equivalent: it searches the extension module's directory before
++ * the normal DLL search locations.
++ *
++ * Only retry ERROR_INVALID_PARAMETER.  Other failures (for example a
++ * missing dependency) must be reported unchanged and must not trigger a
++ * less restrictive second search on modern Windows.
++ */
++static HMODULE
++load_library_ex_compat(const wchar_t *path, DWORD flags, DWORD legacy_flags)
++{
++    HMODULE handle = LoadLibraryExW(path, NULL, flags);
++    if (handle == NULL && GetLastError() == ERROR_INVALID_PARAMETER) {
++        handle = LoadLibraryExW(path, NULL, legacy_flags);
++    }
++    return handle;
++}
++
+ #ifdef _DEBUG
+ #define PYD_DEBUG_SUFFIX "_d"
+ #else
+@@ -189,7 +211,10 @@ _Py_CheckPython3(void)
+         wchar_t *p = wcsrchr(py3path, L'\\');
+         if (p) {
+             wcscpy(p + 1, PY3_DLLNAME);
+-            hPython3 = LoadLibraryExW(py3path, NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
++            hPython3 = load_library_ex_compat(
++                py3path,
++                LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
++                LOAD_WITH_ALTERED_SEARCH_PATH);
+             if (hPython3 != NULL) {
+                 return 1;
+             }
+@@ -198,7 +223,10 @@ _Py_CheckPython3(void)
+ 
+     /* If we can locate python3.dll in our application dir,
+        use that DLL */
+-    hPython3 = LoadLibraryExW(PY3_DLLNAME, NULL, LOAD_LIBRARY_SEARCH_APPLICATION_DIR);
++    hPython3 = load_library_ex_compat(
++        PY3_DLLNAME,
++        LOAD_LIBRARY_SEARCH_APPLICATION_DIR,
++        0);
+     if (hPython3 != NULL) {
+         return 1;
+     }
+@@ -211,7 +239,10 @@ _Py_CheckPython3(void)
+     if (config->prefix) {
+         wcscpy_s(py3path, MAXPATHLEN, config->prefix);
+         if (py3path[0] && _Py_add_relfile(py3path, L"DLLs\\" PY3_DLLNAME, MAXPATHLEN) >= 0) {
+-            hPython3 = LoadLibraryExW(py3path, NULL, LOAD_LIBRARY_SEARCH_DEFAULT_DIRS);
++            hPython3 = load_library_ex_compat(
++                py3path,
++                LOAD_LIBRARY_SEARCH_DEFAULT_DIRS,
++                LOAD_WITH_ALTERED_SEARCH_PATH);
+         }
+     }
+     return hPython3 != NULL;
+@@ -250,9 +281,11 @@ dl_funcptr _PyImport_FindSharedFuncptrWindows(const char *prefix,
+            AddDllDirectory function. We add SEARCH_DLL_LOAD_DIR to
+            ensure DLLs adjacent to the PYD are preferred. */
+         Py_BEGIN_ALLOW_THREADS
+-        hDLL = LoadLibraryExW(wpathname, NULL,
+-                              LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
+-                              LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR);
++        hDLL = load_library_ex_compat(
++            wpathname,
++            LOAD_LIBRARY_SEARCH_DEFAULT_DIRS |
++                LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR,
++            LOAD_WITH_ALTERED_SEARCH_PATH);
+         Py_END_ALLOW_THREADS
+         PyMem_Free(wpathname);
+ 
+diff --git a/v3.12/Python-3.12.10/Python/fileutils.c b/v3.12/Python-3.12.10/Python/fileutils.c
+index 36397b3..7a6e353 100644
+--- a/v3.12/Python-3.12.10/Python/fileutils.c
++++ b/v3.12/Python-3.12.10/Python/fileutils.c
+@@ -2235,7 +2235,8 @@ _Py_abspath(const wchar_t *path, wchar_t **abspath_p)
+ // but does not expose them yet. Load them dynamically until
+ // 1) they are officially exposed
+ // 2) we stop supporting older versions of the GDK which do not expose them
+-#if defined(MS_WINDOWS_GAMES) && !defined(MS_WINDOWS_DESKTOP)
++#if (defined(MS_WINDOWS_GAMES) && !defined(MS_WINDOWS_DESKTOP)) || \
++    defined(PY_VISTA_LEGACY_SDK)
+-HRESULT
++HRESULT WINAPI
+ PathCchSkipRoot(const wchar_t *path, const wchar_t **rootEnd)
+ {
+@@ -2247,6 +2248,10 @@ PathCchSkipRoot(const wchar_t *path, const wchar_t **rootEnd)
+     if (initialized == 0) {
++#ifdef PY_VISTA_LEGACY_SDK
++        HMODULE pathapi = LoadLibraryW(L"api-ms-win-core-path-l1-1-0.dll");
++#else
+         HMODULE pathapi = LoadLibraryExW(L"api-ms-win-core-path-l1-1-0.dll", NULL,
+                                          LOAD_LIBRARY_SEARCH_SYSTEM32);
++#endif
+         if (pathapi) {
+             _PathCchSkipRoot = (PPathCchSkipRoot)GetProcAddress(
+                 pathapi, "PathCchSkipRoot");
+@@ -2267,2 +2272,2 @@ PathCchSkipRoot(const wchar_t *path, const wchar_t **rootEnd)
+-static HRESULT
++static HRESULT WINAPI
+ PathCchCombineEx(wchar_t *buffer, size_t bufsize, const wchar_t *dirname,
+@@ -2279,6 +2284,10 @@ PathCchCombineEx(wchar_t *buffer, size_t bufsize, const wchar_t *dirname,
+     if (initialized == 0) {
++#ifdef PY_VISTA_LEGACY_SDK
++        HMODULE pathapi = LoadLibraryW(L"api-ms-win-core-path-l1-1-0.dll");
++#else
+         HMODULE pathapi = LoadLibraryExW(L"api-ms-win-core-path-l1-1-0.dll", NULL,
+                                          LOAD_LIBRARY_SEARCH_SYSTEM32);
++#endif
+         if (pathapi) {
+             _PathCchCombineEx = (PPathCchCombineEx)GetProcAddress(
+                 pathapi, "PathCchCombineEx");
+@@ -2296,7 +2305,7 @@ PathCchCombineEx(wchar_t *buffer, size_t bufsize, const wchar_t *dirname,
+     return _PathCchCombineEx(buffer, bufsize, dirname, relfile, flags);
+ }
+ 
+-#endif /* defined(MS_WINDOWS_GAMES) && !defined(MS_WINDOWS_DESKTOP) */
++#endif /* Games API family or Vista compatibility build */
+ 
+ // The caller must ensure "buffer" is big enough.
+ static int
+diff --git a/v3.12/Python-3.12.10/Modules/_winapi.c b/v3.12/Python-3.12.10/Modules/_winapi.c
+index d23d6ce..a17993d 100644
+--- a/v3.12/Python-3.12.10/Modules/_winapi.c
++++ b/v3.12/Python-3.12.10/Modules/_winapi.c
+@@ -1797,8 +1797,12 @@ _winapi_LCMapStringEx_impl(PyObject *module, LPCWSTR locale, DWORD flags,
+                            PyObject *src)
+ /*[clinic end generated code: output=b90e6b26e028ff0a input=3e3dcd9b8164012f]*/
+ {
++#ifdef PY_VISTA_LEGACY_SDK
++    if (flags & (LCMAP_BYTEREV | LCMAP_SORTKEY)) {
++#else
+     if (flags & (LCMAP_SORTHANDLE | LCMAP_HASH | LCMAP_BYTEREV |
+                  LCMAP_SORTKEY)) {
++#endif
+         return PyErr_Format(PyExc_ValueError, "unsupported flags");
+     }
+ 
+@@ -2354,6 +2358,7 @@ _winapi_NeedCurrentDirectoryForExePath_impl(PyObject *module,
+     return result;
+ }
+ 
++#ifndef PY_VISTA_LEGACY_SDK
+ typedef HRESULT (WINAPI *CopyFile2Func)(PCWSTR pwszExistingFileName, PCWSTR pwszNewFileName, COPYFILE2_EXTENDED_PARAMETERS *pExtendedParameters);
+ CopyFile2Func Py_CopyFile2;
+ 
+@@ -2415,6 +2420,7 @@ _winapi_CopyFile2_impl(PyObject *module, LPCWSTR existing_file_name,
+     }
+     Py_RETURN_NONE;
+ }
++#endif
+ 
+ 
+ static PyMethodDef winapi_functions[] = {
+@@ -2454,7 +2460,9 @@ static PyMethodDef winapi_functions[] = {
+     _WINAPI_GETFILETYPE_METHODDEF
+     _WINAPI__MIMETYPES_READ_WINDOWS_REGISTRY_METHODDEF
+     _WINAPI_NEEDCURRENTDIRECTORYFOREXEPATH_METHODDEF
++#ifndef PY_VISTA_LEGACY_SDK
+     _WINAPI_COPYFILE2_METHODDEF
++#endif
+     {NULL, NULL}
+ };
+ 
+@@ -2595,7 +2603,9 @@ static int winapi_exec(PyObject *m)
+     WINAPI_CONSTANT(F_DWORD, LCMAP_LINGUISTIC_CASING);
+     WINAPI_CONSTANT(F_DWORD, LCMAP_LOWERCASE);
+     WINAPI_CONSTANT(F_DWORD, LCMAP_SIMPLIFIED_CHINESE);
++#ifndef PY_VISTA_LEGACY_SDK
+     WINAPI_CONSTANT(F_DWORD, LCMAP_TITLECASE);
++#endif
+     WINAPI_CONSTANT(F_DWORD, LCMAP_TRADITIONAL_CHINESE);
+     WINAPI_CONSTANT(F_DWORD, LCMAP_UPPERCASE);
+ 
+@@ -2603,9 +2613,10 @@ static int winapi_exec(PyObject *m)
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_COPY_SYMLINK);
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_FAIL_IF_EXISTS);
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_NO_BUFFERING);
+-    WINAPI_CONSTANT(F_DWORD, COPY_FILE_NO_OFFLOAD);
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_OPEN_SOURCE_FOR_WRITE);
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_RESTARTABLE);
++#ifndef PY_VISTA_LEGACY_SDK
++    WINAPI_CONSTANT(F_DWORD, COPY_FILE_NO_OFFLOAD);
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_REQUEST_SECURITY_PRIVILEGES);
+     WINAPI_CONSTANT(F_DWORD, COPY_FILE_RESUME_FROM_PAUSE);
+ #ifndef COPY_FILE_REQUEST_COMPRESSED_TRAFFIC
+@@ -2626,6 +2637,7 @@ static int winapi_exec(PyObject *m)
+     WINAPI_CONSTANT(F_DWORD, COPYFILE2_PROGRESS_STOP);
+     WINAPI_CONSTANT(F_DWORD, COPYFILE2_PROGRESS_QUIET);
+     WINAPI_CONSTANT(F_DWORD, COPYFILE2_PROGRESS_PAUSE);
++#endif
+ 
+     WINAPI_CONSTANT("i", NULL);
+ 
+@@ -2674,6 +2686,7 @@ static struct PyModuleDef winapi_module = {
+ PyMODINIT_FUNC
+ PyInit__winapi(void)
+ {
++#ifndef PY_VISTA_LEGACY_SDK
+     HMODULE hKernel32 = GetModuleHandleW(L"kernel32");
+     if (!hKernel32) return NULL;
+     if (!(Py_CopyFile2 = (CopyFile2Func)GetProcAddress(hKernel32, "CopyFile2"))) {
+@@ -2690,5 +2703,6 @@ PyInit__winapi(void)
+             }
+         }
+     }
++#endif
+     return PyModuleDef_Init(&winapi_module);
+ }
+diff --git a/v3.12/Python-3.12.10/Modules/clinic/_winapi.c.h b/v3.12/Python-3.12.10/Modules/clinic/_winapi.c.h
+index d7ad551..6e80987 100644
+--- a/v3.12/Python-3.12.10/Modules/clinic/_winapi.c.h
++++ b/v3.12/Python-3.12.10/Modules/clinic/_winapi.c.h
+@@ -1562,1 +1562,2 @@ exit:
++#ifndef PY_VISTA_LEGACY_SDK
+ PyDoc_STRVAR(_winapi_CopyFile2__doc__,
+@@ -1631,1 +1632,2 @@ exit:
++#endif
+ /*[clinic end generated code: output=91b39b70024fa232 input=a9049054013a1b77]*/
+diff --git a/v3.12/Python-3.12.10/Modules/posixmodule.c b/v3.12/Python-3.12.10/Modules/posixmodule.c
+index 97914ad..9c64d25 100644
+--- a/v3.12/Python-3.12.10/Modules/posixmodule.c
++++ b/v3.12/Python-3.12.10/Modules/posixmodule.c
+@@ -14516,2 +14516,2 @@ os_cpu_count_impl(PyObject *module)
+-    HMODULE hKernel32 = GetModuleHandle("kernel32.dll");
++    HMODULE hKernel32 = GetModuleHandleW(L"kernel32.dll");
+     typedef DWORD (WINAPI *LPFN_GETACTIVEPROCESSORCOUNT)(WORD);
+diff --git a/v3.12/Python-3.12.10/Modules/socketmodule.c b/v3.12/Python-3.12.10/Modules/socketmodule.c
+index 25df137..34b5e22 100644
+--- a/v3.12/Python-3.12.10/Modules/socketmodule.c
++++ b/v3.12/Python-3.12.10/Modules/socketmodule.c
+@@ -316,3 +316,5 @@ shutdown(how) -- shut down traffic in one or both directions\n\
+ /* Provides the IsWindows7SP1OrGreater() function */
++#ifndef PY_VISTA_LEGACY_SDK
+ #include <versionhelpers.h>
++#endif
+ // For if_nametoindex() and if_indextoname()
+diff --git a/v3.12/Python-3.12.10/PCbuild/pcbuild.proj b/v3.12/Python-3.12.10/PCbuild/pcbuild.proj
+index 28269f0..f44da39 100644
+--- a/v3.12/Python-3.12.10/PCbuild/pcbuild.proj
++++ b/v3.12/Python-3.12.10/PCbuild/pcbuild.proj
+@@ -15,4 +15,5 @@
+     <IncludeSSL Condition="'$(IncludeSSL)' == ''">true</IncludeSSL>
+     <IncludeTkinter Condition="'$(IncludeTkinter)' == ''">true</IncludeTkinter>
+     <IncludeUwp Condition="'$(IncludeUwp)' == ''">false</IncludeUwp>
++    <VistaEmbedOnly Condition="'$(VistaEmbedOnly)' == ''">false</VistaEmbedOnly>
+   </PropertyGroup>
+@@ -60,16 +61,17 @@
+     <!-- python3.dll -->
+     <Projects Include="python3dll.vcxproj" />
+     <!-- py[w].exe -->
+-    <Projects Include="pylauncher.vcxproj;pywlauncher.vcxproj" />
++    <Projects Include="pylauncher.vcxproj;pywlauncher.vcxproj" Condition="'$(VistaEmbedOnly)' != 'true'" />
+     <!-- pyshellext.dll -->
+-    <Projects Include="pyshellext.vcxproj" />
++    <Projects Include="pyshellext.vcxproj" Condition="'$(VistaEmbedOnly)' != 'true'" />
+     <!-- Extension modules -->
+-    <ExtensionModules Include="_asyncio;_zoneinfo;_decimal;_elementtree;_msi;_multiprocessing;_overlapped;pyexpat;_queue;select;unicodedata;winsound;_uuid;_wmi" />
++    <ExtensionModules Include="_asyncio;_zoneinfo;_decimal;_elementtree;_msi;_multiprocessing;_overlapped;pyexpat;_queue;select;unicodedata;winsound;_uuid" />
++    <ExtensionModules Include="_wmi" Condition="'$(VistaEmbedOnly)' != 'true'" />
+     <ExtensionModules Include="_ctypes" Condition="$(IncludeCTypes)" />
+     <!-- Extension modules that require external sources -->
+     <ExternalModules Include="_bz2;_lzma;_sqlite3" />
+     <!-- venv launchers -->
+-    <Projects Include="venvlauncher.vcxproj;venvwlauncher.vcxproj" />
++    <Projects Include="venvlauncher.vcxproj;venvwlauncher.vcxproj" Condition="'$(VistaEmbedOnly)' != 'true'" />
+     <!-- _ssl will build _socket as well, which may cause conflicts in parallel builds -->
+     <ExtensionModules Include="_socket" Condition="!$(IncludeSSL) or !$(IncludeExternals)" />
+     <ExternalModules Include="_ssl;_hashlib" Condition="$(IncludeSSL)" />
+@@ -91,5 +93,5 @@
+     <Projects2 Include="python.vcxproj;pythonw.vcxproj" />
+     <Projects2 Include="python_uwp.vcxproj;pythonw_uwp.vcxproj" Condition="$(IncludeUwp)" />
+     <!-- venv[w]launcher.exe -->
+-    <Projects2 Include="venvlauncher.vcxproj;venvwlauncher.vcxproj" />
++    <Projects2 Include="venvlauncher.vcxproj;venvwlauncher.vcxproj" Condition="'$(VistaEmbedOnly)' != 'true'" />
+   </ItemGroup>
